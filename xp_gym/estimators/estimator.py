@@ -1,0 +1,37 @@
+from flax import struct
+from chex import PRNGKey
+from gymnax.environments.environment import EnvParams
+from xp_gym.observation import Observation
+
+
+@struct.dataclass
+class EstimatorState:
+    """
+    Abstract base class for estimator states
+    """
+    pass
+
+
+
+@struct.dataclass
+class Estimator:
+    """
+    Abstract base class for estimators.
+    """
+    def reset(self, rng: PRNGKey, env_params: EnvParams) -> EstimatorState:
+        """
+        Initialize the estimator with necessary parameters.
+        """
+        raise NotImplementedError("Initialize method must be implemented in subclass.")
+
+    def update(self, state: EstimatorState, obs: Observation):
+        """
+        Update the estimator with new data.
+        """
+        raise NotImplementedError("Update method must be implemented in subclass.")
+
+    def estimate(self, state: EstimatorState):
+        """
+        Estimate the value based on the current state of the estimator.
+        """
+        raise NotImplementedError("Estimate method must be implemented in subclass.")
