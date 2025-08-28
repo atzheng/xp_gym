@@ -1,0 +1,2 @@
+naive:
+  _target_: xp_gym.estimators.naive.NaiveEstimator

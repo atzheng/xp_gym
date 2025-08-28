@@ -1,0 +1,4 @@
+_target_: xp_gym.environments.rideshare.XPRidesharePricingEnv
+n_cars: 300
+price_per_distance_A: 0.01
+price_per_distance_B: 0.02
