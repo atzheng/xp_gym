@@ -1,0 +1,28 @@
+run:
+  output_path: "output/test_out.csv"
+  n_envs: 4
+  n_steps: 10000
+  estimate_every_n_steps: 1000
+  seed: 42
+
+
+env:
+  # _target_: xp_gym.environments.rideshare.XPRidesharePricingEnv
+  # n_cars: 300
+  # price_per_distance_A: 0.01
+  # price_per_distance_B: 0.02
+  _target_: xp_gym.environments.abtest.ABTestEnv
+
+env_params:
+  noise_std: 10
+
+
+
+design:
+  _target_: xp_gym.designs.design.UnitRandomizedDesign
+  p: 0.5
+
+
+estimators:
+  naive:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
