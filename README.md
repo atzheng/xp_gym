@@ -108,6 +108,8 @@ python scripts/run.py run.n_steps=5000 run.seed=123
 python scripts/run.py --config-name=my_config
 ```
 
+You can select multiple estimators to compute in a single run using the syntax [here](https://hydra.cc/docs/patterns/select_multiple_configs_from_config_group/)
+
 ### Configuration Structure
 
 The configuration is defined in `scripts/config/config.yaml`:
