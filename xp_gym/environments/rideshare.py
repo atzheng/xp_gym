@@ -16,12 +16,13 @@ class XPRidesharePricingEnv(XPEnvironment):
     def __init__(
         self,
         n_cars: int = 300,
+        n_events: int = 500000,
         price_per_distance_A: float = 0.01,
         price_per_distance_B: float = 0.02,
         **kwargs
     ):
         super().__init__(
-            env=ManhattanRidesharePricing(n_cars=n_cars, **kwargs),
+            env=ManhattanRidesharePricing(n_cars=n_cars, n_events=n_events, **kwargs),
             policy_A=SimplePricingPolicy(
                 n_cars=n_cars, price_per_distance=price_per_distance_A
             ),

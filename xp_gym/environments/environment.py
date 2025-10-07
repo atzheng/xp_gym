@@ -53,14 +53,14 @@ class XPEnvironment(environment.Environment):
         action_B = self.policy_B.apply(
             env_params, dict(), obs, policy_key, **params.policy_B_kwargs
         )
-        action_A = self.policy_B.apply(
+        action_A = self.policy_A.apply(
             env_params, dict(), obs, policy_key, **params.policy_A_kwargs
         )
         action, action_info = jax.lax.cond(
             action, lambda: action_B, lambda: action_A
         )
         next_obs, next_state, reward, done, info = self.env.step(
-            key, state, action, env_params
+            step_key, state, action, env_params
         )
 
         return (

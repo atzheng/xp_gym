@@ -5,9 +5,50 @@ defaults:
 
 run:
   output_path: "output/test_out.csv"
-  n_envs: 4
-  n_steps: 10000
+  n_envs: 100
+  n_steps: 100000
   estimate_every_n_steps: 1000
   seed: 42
 
-env_params: {}
+env:
+  _target_: xp_gym.environments.rideshare.XPRidesharePricingEnv
+  n_cars: 300
+  n_events: ${run.n_steps}   # reference run.n_steps
+  price_per_distance_A: 0.01
+  price_per_distance_B: 0.02
+
+env_params:
+  env_params:  # Nested structure for inner rideshare environment
+    w_price: -0.3      # Price sensitivity (negative = higher prices reduce acceptance)
+    w_eta: -0.005      # Wait time sensitivity (negative = longer waits reduce acceptance) 
+    w_intercept: 4     # Base acceptance rate (high = customers generally accept rides)
+
+design:
+  _target_: xp_gym.designs.design.SpatioClusterDesign
+  p: 0.5
+  switch_every: 1000
+
+estimators:
+  naive:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
+  dm:
+    _target_: xp_gym.estimators.dm.DMEstimator
+  dn:
+    _target_: xp_gym.estimators.dn.DNEstimator
+    max_spatial_distance: 2
+    lookahead_steps: 600
+    switch_every: ${design.switch_every}
+    n_events: ${env.n_events}
+    n_cars: ${env.n_cars}
+  tpg:
+    _target_: xp_gym.estimators.tpg.TPGEstimator
+    k: 10
+  dynkin:
+    _target_: xp_gym.estimators.dynkin.DynkinEstimator
+    reg_param: 1e-3
+    discount_factor: 1.0
+  lstd_lambda:
+    _target_: xp_gym.estimators.lstd_lambda.LSTDLambdaEstimator
+    alpha: 1.0
+    lambda_: 0.0
+    discount_factor: 1.0
