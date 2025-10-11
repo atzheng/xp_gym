@@ -24,31 +24,36 @@ env_params:
     w_intercept: 4     # Base acceptance rate (high = customers generally accept rides)
 
 design:
-  _target_: xp_gym.designs.design.SpatioClusterDesign
+  # _target_: xp_gym.designs.design.SpatioClusterDesign
+  _target_: xp_gym.designs.design.SwitchbackDesign
   p: 0.5
-  switch_every: 1000
+  switch_every: 600
 
 estimators:
   naive:
     _target_: xp_gym.estimators.naive.NaiveEstimator
   dm:
     _target_: xp_gym.estimators.dm.DMEstimator
-  dn:
-    _target_: xp_gym.estimators.dn.DNEstimator
-    max_spatial_distance: 2
-    lookahead_steps: 600
-    switch_every: ${design.switch_every}
-    n_events: ${env.n_events}
-    n_cars: ${env.n_cars}
+  # dn:
+  #   _target_: xp_gym.estimators.dn.DNEstimator
+  #   max_spatial_distance: 2
+  #   lookahead_steps: 600
+  #   switch_every: ${design.switch_every}
+  #   n_events: ${env.n_events}
+  #   n_cars: ${env.n_cars}
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
-    k: 10
-  dynkin:
-    _target_: xp_gym.estimators.dynkin.DynkinEstimator
-    reg_param: 1e-3
-    discount_factor: 1.0
-  lstd_lambda:
-    _target_: xp_gym.estimators.lstd_lambda.LSTDLambdaEstimator
-    alpha: 1.0
-    lambda_: 0.0
-    discount_factor: 1.0
+    k: 1
+  sw_tpg:
+    _target_: xp_gym.estimators.sw_tpg.SwitchbackTPGEstimator
+    k: 1
+    switch_every: ${design.switch_every}
+  # dynkin:
+  #   _target_: xp_gym.estimators.dynkin.DynkinEstimator
+  #   reg_param: 1e-3
+  #   discount_factor: 1.0
+  # lstd_lambda:
+  #   _target_: xp_gym.estimators.lstd_lambda.LSTDLambdaEstimator
+  #   alpha: 1.0
+  #   lambda_: 0.0
+  #   discount_factor: 1.0

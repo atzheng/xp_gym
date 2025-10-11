@@ -126,7 +126,9 @@ def plot_estimator_comparison(csv_path="output/test_out.csv", output_path="estim
         "naive": "naive IPW",
         "new_dynkin": "DQ",
         "new_lstd_lambda": "OPE-LSTD",
-        "truncated_dq": "Trunc-DQ"
+        "truncated_dq": "Trunc-DQ",
+        "cluster_truncated_dq": "Cluster-Trunc-DQ",
+        "cluster_truncated_dq_nonIPW": "Cluster-Trunc-DQ-NonIPW"
     }
 
     
@@ -140,7 +142,7 @@ def plot_estimator_comparison(csv_path="output/test_out.csv", output_path="estim
     
     # Add mean points
     means = melted.groupby('Estimator')['Final_Estimate'].mean()
-    ymin, ymax = true_ate - 2, true_ate + 1
+    ymin, ymax = true_ate - 3, true_ate + 3
     ax.set_ylim(ymin, ymax)
 
     # When plotting means, clip them inside the ylim

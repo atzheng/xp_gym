@@ -13,7 +13,7 @@ ex = Experiment("compute-ate")
 
 @ex.config
 def config():
-    n_cars = 50  # Number of cars
+    n_cars = 300  # Number of cars
     # Pricing choice model parameters
     w_price = -0.3
     w_eta = -0.005
@@ -55,29 +55,6 @@ def run_batch(env, env_params, A, B, key, n_steps, batch_size):
         "A": results_A,
         "B": results_B,
     }
-
-
-# @ex.automain
-# def main(
-#     n_cars, w_price, w_eta, w_intercept, n_events, k, output, seed, batch_size
-# ):
-#     env = ManhattanRidesharePricing(n_cars=n_cars, n_events=n_events)
-#     env_params = env.default_params
-#     env_params = env_params.replace(
-#         w_price=w_price, w_eta=w_eta, w_intercept=w_intercept
-#     )
-#     A = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=0.01)
-#     B = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=0.02)
-
-#     n_batches = k // batch_size
-#     jax.debug.print(f"n_batches: {n_batches}")
-#     keys = jax.random.split(jax.random.PRNGKey(seed), n_batches)
-#     results = [
-#         run_batch(env, env_params, A, B, key, n_events, batch_size)
-#         for key in tqdm(keys)
-#     ]
-#     results_df = pd.concat(map(pd.DataFrame, results))
-#     results_df.to_csv(output, index=False)
 
 
 @ex.automain

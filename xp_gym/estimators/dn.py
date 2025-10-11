@@ -41,10 +41,10 @@ class DNEstimator(Estimator):
     
     def reset(self, rng, env_params):
         # Load spatial data to construct adjacency matrix exactly like original
-        zones = pd.read_parquet("taxi-zones.parquet")
+        zones = pd.read_parquet("data/taxi-zones.parquet")
         unq_zones, unq_zone_ids = np.unique(zones["zone"], return_inverse=True)
         zones["zone_id"] = unq_zone_ids
-        nodes = pd.read_parquet("manhattan-nodes.parquet")
+        nodes = pd.read_parquet("data/manhattan-nodes.parquet")
         nodes["lng"] = nodes["lng"].astype(float)
         nodes["lat"] = nodes["lat"].astype(float)
         nodes_zones = nodes.merge(zones, on="osmid")

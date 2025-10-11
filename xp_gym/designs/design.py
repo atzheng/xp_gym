@@ -93,18 +93,140 @@ class UnitRandomizedDesign(ClusterRandomizedDesign):
         return env_state.time
 
 
+### Event counts based switchback design ###
+# @struct.dataclass
+# class SwitchbackDesign(ClusterRandomizedDesign):
+#     time_attr: str = "time"
+#     frequency: float = 1.0
+
+#     def get_cluster_id(self, design_state: ClusterDesignState, env_state: EnvState) -> int:
+#         """
+#         Returns the cluster ID based on the time attribute.
+#         This design uses the time step as the cluster ID.
+#         """
+#         t = op.attrgetter(self.time_attr)(env_state)
+#         return jnp.floor(t / self.frequency).astype(jnp.int32)
+
+
+@struct.dataclass
+class SwitchbackDesignInfo(ClusterDesignInfo):
+    """Design info for SwitchbackDesign that includes current time."""
+    current_time: float = 0.0  # Current event time for state updates
+
+
+@struct.dataclass
+class SwitchbackDesignState(ClusterDesignState):
+    """Simplified state for ascending time-ordered events (time-only)."""
+    current_time_index: int  # Current sequential time period index
+    last_time_interval: int  # Last seen time interval boundary
+
+
 @struct.dataclass
 class SwitchbackDesign(ClusterRandomizedDesign):
-    time_attr: str = "time"
-    frequency: float = 1.0
+    """
+    Efficient time-based switchback design leveraging ascending time order.
 
-    def get_cluster_id(self, design_state: ClusterDesignState, env_state: EnvState) -> int:
+    Similar to RefinedSpatioClusterDesign but without spatial clustering.
+    Uses real event time instead of discrete time steps.
+
+    Key features:
+    1. No dynamic arrays or searching - just track current time index
+    2. Simple increment when time period changes
+    3. O(1) complexity for all operations
+    4. Fully JAX-compatible
+    """
+    switch_every: int = 5000  # Time period duration in real time units
+
+    def reset(self, rng: PRNGKey, env_params: EnvParams) -> SwitchbackDesignState:
+        """Simple reset with minimal state."""
+        return SwitchbackDesignState(
+            rng=rng,
+            current_time_index=-1,  # Start with -1, will increment to 0 on first use
+            last_time_interval=-1  # No time interval seen yet
+        )
+
+    def get_cluster_id(self, design_state: SwitchbackDesignState, env_state: EnvState) -> int:
         """
-        Returns the cluster ID based on the time attribute.
-        This design uses the time step as the cluster ID.
+        Efficient cluster ID calculation leveraging ascending time order.
+
+        Since time is ascending, we only check if we've moved to a new time period.
+        If so, increment the time index.
         """
-        t = op.attrgetter(self.time_attr)(env_state)
-        return jnp.floor(t / self.frequency).astype(jnp.int32)
+        # Get real event time and calculate time interval (end boundary)
+        t = env_state.event.t
+        current_time_interval = (t // self.switch_every + 1) * self.switch_every
+
+        # Check if this is a new time period
+        # Handle the first event (when last_time_interval is -1)
+        is_first_event = design_state.last_time_interval == -1
+        is_new_period = current_time_interval != design_state.last_time_interval
+
+        # Calculate time index - start from 0 for first period
+        # For first event, use 0; for new period, increment; otherwise keep current
+        time_index = jnp.where(
+            is_first_event,
+            0,  # First event gets index 0
+            jnp.where(
+                is_new_period,
+                design_state.current_time_index + 1,  # Increment for new period
+                design_state.current_time_index       # Keep current index
+            )
+        )
+
+        return time_index
+
+    def assign_treatment(self, design_state: SwitchbackDesignState, env_state: EnvState):
+        """Assign treatment with efficient O(1) cluster ID calculation."""
+        # Get cluster ID (which is just the time index)
+        cluster_id = self.get_cluster_id(design_state, env_state)
+
+        # Generate treatment assignment
+        new_rng = jax.random.fold_in(design_state.rng, cluster_id)
+        z = jax.random.bernoulli(new_rng, self.p)
+
+        # Create design info with current time for update() to use
+        design_info = SwitchbackDesignInfo(
+            p=self.p,
+            cluster_id=cluster_id,
+            current_time=env_state.event.t
+        )
+
+        return z, design_info
+
+    def update(self, state: SwitchbackDesignState, obs: Observation) -> SwitchbackDesignState:
+        """
+        Update design state based on the observation.
+        This is called after assign_treatment in the simulation loop.
+        """
+        # Extract current time from the design info in the observation
+        if hasattr(obs.design_info, 'current_time'):
+            current_time = obs.design_info.current_time
+            current_time_interval = (current_time // self.switch_every + 1) * self.switch_every
+
+            # Check if we've moved to a new time period
+            is_new_period = current_time_interval != state.last_time_interval
+
+            # Update state if needed (leveraging ascending time order)
+            new_time_index = jnp.where(
+                is_new_period,
+                state.current_time_index + 1,  # Increment for new period
+                state.current_time_index       # Keep current index
+            )
+
+            new_last_interval = jnp.where(
+                is_new_period,
+                current_time_interval,         # Update to current interval
+                state.last_time_interval      # Keep previous
+            )
+
+            return state.replace(
+                current_time_index=new_time_index,
+                last_time_interval=new_last_interval
+            )
+
+        return state
+
+
 
 @struct.dataclass
 class SpatioClusterDesignState(ClusterDesignState):
@@ -139,7 +261,7 @@ class SpatioClusterDesign(ClusterRandomizedDesign):
     4. Fully JAX-compatible operations with O(1) complexity
     """
     switch_every: int = 5000
-    data_path: str = "."
+    data_path: str = "data"
     _spatial_mapping: dict = None
 
     def __post_init__(self):
