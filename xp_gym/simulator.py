@@ -81,7 +81,7 @@ def simulate(
     rng, design_rng = jax.random.split(rng)
     obs, state = env.reset(reset_rng, env_params)
     init_est_states = {
-        est_name: estimator.reset(estimator_rng, env_params)
+        est_name: estimator.reset(estimator_rng, env, env_params)
         for est_name, estimator in estimators.items()
     }
     init_carry = (

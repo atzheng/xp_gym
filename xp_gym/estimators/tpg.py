@@ -38,7 +38,7 @@ class TPGEstimator(Estimator):
     """
     k: int  # Truncation horizon
     
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         # Handle k=0 case by using minimum size of 1 for arrays
         buffer_size = max(self.k, 1)
         return TPGEstimatorState(

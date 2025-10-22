@@ -22,7 +22,7 @@ class InterferenceNetwork:
     """
 
     def reset(
-        self, rng: PRNGKey, env_params: EnvParams
+        self, rng: PRNGKey, env, env_params: EnvParams
     ) -> InterferenceNetworkState:
         return InterferenceNetworkState()
         # Initialize any graph structure here
@@ -57,7 +57,7 @@ class SpatioTemporalInterferenceNetworkState(InterferenceNetworkState):
 class SpatioTemporalInterferenceNetwork(object):
     T: int  # Time horizon
 
-    def reset(self, rng: PRNGKey, env_params: EnvParams):
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams):
         return SpatioTemporalInterferenceNetworkState(
             space_ids=-jnp.ones(self.T, dtype=jnp.int32),
             time_ids=-jnp.ones(self.T, dtype=jnp.int32),
@@ -107,7 +107,7 @@ class ClusterNetworkEstimator(Estimator):
     T: int  # Time horizon
     # Need to somehow compute the probability of seeing arbitrary treatment vectors
 
-    def reset(self, rng: PRNGKey, env_params: EnvParams):
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams):
         """
         Initialize the network estimator with necessary parameters.
         """
@@ -149,7 +149,7 @@ class HTClusterNetworkEstimator(ClusterNetworkEstimator):
     Horvitz-Thompson estimator that accounts for interference in a known network structure,
     """
 
-    def reset(self, rng: PRNGKey, env_params: EnvParams):
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams):
         """
         Initialize the HT network estimator with necessary parameters.
         """

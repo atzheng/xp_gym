@@ -19,7 +19,7 @@ class RideshareInterferenceNetwork:
     space_threshold: int
 
     def reset(
-        self, rng: PRNGKey, env_params: EnvParams
+        self, rng: PRNGKey, env, env_params: EnvParams
     ) -> RideshareInterferenceNetworkState:
         return RideshareInterferenceNetworkState(
             space_ids=-jnp.ones(env_params.n_events, dtype=jnp.int32),

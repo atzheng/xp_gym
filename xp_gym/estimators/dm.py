@@ -24,7 +24,7 @@ class DMEstimator(Estimator):
     but works better with our event-based framework.
     """
 
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         return DMEstimatorState(0.0, 0, 0.0, 0)
 
     def update(self, state: DMEstimatorState, obs: Observation):

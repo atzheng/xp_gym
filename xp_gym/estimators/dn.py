@@ -39,7 +39,7 @@ class DNEstimator(Estimator):
     _space_ids: jnp.ndarray = None  # Space cluster for each cluster
     _space_adj: jnp.ndarray = None  # Spatial adjacency matrix
     
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         # Load spatial data to construct adjacency matrix exactly like original
         zones = pd.read_parquet("data/taxi-zones.parquet")
         unq_zones, unq_zone_ids = np.unique(zones["zone"], return_inverse=True)

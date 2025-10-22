@@ -1,6 +1,6 @@
 from flax import struct
 from chex import PRNGKey
-from gymnax.environments.environment import EnvParams
+from gymnax.environments.environment import EnvParams, Environment
 from xp_gym.observation import Observation
 
 
@@ -18,7 +18,7 @@ class Estimator:
     """
     Abstract base class for estimators.
     """
-    def reset(self, rng: PRNGKey, env_params: EnvParams) -> EstimatorState:
+    def reset(self, rng: PRNGKey, env: Environment, env_params: EnvParams) -> EstimatorState:
         """
         Initialize the estimator with necessary parameters.
         """

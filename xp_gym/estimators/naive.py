@@ -16,7 +16,7 @@ class NaiveEstimator(Estimator):
     Naive estimator that computes the average outcome for treated and control groups.
     """
 
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         return NaiveEstimatorState(0.0, 0)
 
     def update(self, state: NaiveEstimatorState, obs: Observation):
