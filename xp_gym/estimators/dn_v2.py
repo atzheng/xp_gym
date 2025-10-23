@@ -9,8 +9,7 @@ from dataclasses import field
 from xp_gym.estimators.estimator import EstimatorState, Estimator
 from xp_gym.estimators.network import (
     InterferenceNetwork,
-    SpatioTemporalInterferenceNetwork,
-    SpatioTemporalInterferenceNetworkState,
+    NetworkInfo,
 )
 from xp_gym.observation import Observation
 from gymnax.environments.environment import Environment, EnvParams
@@ -19,22 +18,18 @@ from jaxtyping import Array, Bool, Float, Integer
 from jax import Array
 
 
-def haversine_km(lon1, lat1, lon2, lat2):
-    """Approximate great-circle distance (in km) between two lon/lat pairs."""
-    R = 6371.0  # Earth's radius in km
-    lon1, lat1, lon2, lat2 = [jnp.radians(x) for x in (lon1, lat1, lon2, lat2)]
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = (
-        jnp.sin(dlat / 2) ** 2
-        + jnp.cos(lat1) * jnp.cos(lat2) * jnp.sin(dlon / 2) ** 2
-    )
-    c = 2 * jnp.arcsin(jnp.sqrt(a))
-    return R * c
+def is_first_occurrence(x):
+    """
+    Returns a boolean array indicating whether each element in x
+    is the first occurrence of that element.
+    """
+    asort = jnp.argsort(x)
+    xsort = x[asort]
+    return ((xsort - jnp.roll(xsort, 1)) != 0)[jnp.argsort(x)]
 
 
 @struct.dataclass
-class SpatioTemporalNetworkInfo:
+class RideshareNetworkInfo:
     time: Float[Array, ()] = field(
         default_factory=lambda: jnp.zeros((), dtype=jnp.float32)
     )
@@ -44,35 +39,37 @@ class SpatioTemporalNetworkInfo:
 
 
 @struct.dataclass
-class RideshareTemporalNetwork(SpatioTemporalInterferenceNetwork):
+class RideshareNetwork(InterferenceNetwork):
     """
-    Concrete implementation of spatiotemporal interference network for Manhattan.
+    Concrete implementation of spatiotemporal interference network, where
+    adjacency is defined based on spatial distance (km) and temporal distance (steps).
     """
 
     lookahead_steps: int = 600
     max_spatial_distance: int = 2  # km
-    network_info_cls = SpatioTemporalNetworkInfo
 
-    def get_cluster_info(
+    def get_network_info(
         self, env: Environment, env_params: EnvParams, obs: Observation
-    ) -> ClusterInfo:
+    ) -> RideshareNetworkInfo:
         """Extract cluster info (lat, lng, t) from observation."""
         state = obs_to_state(env, env_params, obs)
-        return ClusterInfo(state.event.t, lat=loc[0], lng=loc[1], t=t)
+        return RideshareNetworkInfo(
+            time=state.event.t, location=state.event.src
+        )
 
     def is_adjacent(
         self,
         env: Environment,
         env_params: EnvParams,
-        x: SpatioTemporalNetworkInfo,
-        y: SpatioTemporalNetworkInfo,
+        x: RideshareNetworkInfo,
+        y: RideshareNetworkInfo,
     ):
         """Check if the edge (x, y) exists in the interference graph (i.e., x affects y)."""
         is_space_adj = (
             env_params.distance[x.location, y.location]
             <= self.max_spatial_distance
         )
-        is_time_adj = y.t - x.t < self.lookahead_steps & y.t > x.t
+        is_time_adj = y.time - x.time < self.lookahead_steps & y.time > x.time
         return is_time_adj & is_space_adj
 
 
@@ -80,13 +77,12 @@ class RideshareTemporalNetwork(SpatioTemporalInterferenceNetwork):
 class DNV2EstimatorState(EstimatorState):
     """State for DN v2 estimator using network abstractions."""
 
+    t: int
     design_cluster_treatments: Bool[Array, "n_design_cluster_ids"]
     design_cluster_treatment_probs: Float[Array, "n_design_cluster_ids"]
-    design_cluster_counts: Integer[Array, "n_design_cluster_ids"]
-    estimates: Float[Array, "n_design_cluster_ids"]
     design_cluster_ids: Integer[Array, "window_size"]
     network_infos: NetworkInfo
-    window_ptr: int
+    estimate: Float[Array, ()]
 
 
 @struct.dataclass
@@ -108,32 +104,29 @@ class DNV2Estimator(Estimator):
 
     def reset(self, rng, env, env_params):
         """Initialize DN v2 estimator with network state."""
-        network_infos = jax.vmap(lambda x: self.network.network_info_cls())(
+        network_infos = jax.vmap(
+            lambda _: self.network.get_network_info(
+                env, env_params, env.observation_space.sample()
+            )
+        )(
             jnp.zeros((self.window_size,))  # Dummy initialization
         )
 
         return DNV2EstimatorState(
-            design_cluster_treatments=jnp.zeros(
-                (self.n_design_clusters,), dtype=jnp.bool_
-            ),
-            design_cluster_treatment_probs=jnp.zeros(
-                (self.n_design_clusters,), dtype=jnp.float32
-            ),
-            design_cluster_counts=jnp.zeros(
-                (self.n_design_clusters,), dtype=jnp.int32
-            ),
-            estimates=jnp.zeros((self.n_design_clusters,), dtype=jnp.float32),
+            t=0,
+            design_cluster_treatments=jnp.zeros((self.window_size,), dtype=jnp.bool_),
+            design_cluster_treatment_probs=jnp.zeros((self.window_size,), dtype=jnp.bool_),
             design_cluster_ids=jnp.zeros((self.window_size,), dtype=jnp.int32),
             network_infos=network_infos,
-            window_ptr=0,
+            estimate=jnp.array(0.0, dtype=jnp.float32),
         )
 
     def update(
         self,
-        env: Environment,
-        env_params: EnvParams,
         state: DNV2EstimatorState,
         obs: Observation,
+        env: Environment,
+        env_params: EnvParams,
     ):
         """Update DN v2 estimator using network interference structure."""
         # Extract observation info
@@ -153,59 +146,45 @@ class DNV2Estimator(Estimator):
         is_adjacent = jax.vmap(
             self.network.is_adjacent, in_axes=(None, None, 0, None)
         )(env, env_params, state.network_infos, new_network_info)
+        # Ensures that dummy entries (during first window) are ignored
+        not_dummy = jnp.arange(self.window_size) <= state.t  
+        # Each cluster should be represented by its first occurrence
+        is_first = is_first_occurrence(state.design_cluster_ids)  
 
-        # Update estimates for adjacent design clusters. The .at, .set logic
-        # ensures that the current estimate counts only once for a given cluster
-        estimates = state.estimates + (
-            jnp.zeros((self.n_design_clusters,), dtype=jnp.float32)
-            .at[state.design_cluster_ids]
-            .set(jnp.where(is_adjacent, update_val, 0.0))
-        )
+        zc = state.design_cluster_treatments
+        pc = state.design_cluster_treatment_probs
 
-        # These should be constant over time
-        design_cluster_treatments = state.design_cluster_treatments.at[
-            cluster_id
-        ].set(treatment)
-        design_cluster_treatment_probs = state.design_cluster_treatments.at[
-            cluster_id
-        ].set(p)
-        design_cluster_counts = state.design_cluster_counts.at[cluster_id].add(
-            1
-        )
+        # Eqn. (9) from paper (DN-Cluster estimator)
+        estimate = state.estimate + (
+            (is_adjacent & not_dummy & is_first_occurrence & is_first) * (
+                zc / pc - (1 - zc) / (1 - pc)
+            ) * xi
+            + z / p - (1 - z) / (1 - p)
+       ) * reward
 
         # Replace info stored in the window with info from the current step
-        design_cluster_ids = state.design_cluster_ids.at[current_ptr].set(
+        window_ptr = state.t % self.window_size
+        design_cluster_ids = state.design_cluster_ids.at[window_ptr].set(
             cluster_id
         )
+        design_cluster_treatments = zc.at[window_ptr].set(z)
+        design_cluster_treatment_probs = pc.at[window_ptr].set(p)
         network_infos = jax.tree.map(
-            lambda a, b: a.at[current_ptr].set(b),
+            lambda a, b: a.at[window_ptr].set(b),
             state.network_infos,
             new_network_info,
         )
 
         return DNV2EstimatorState(
+            t=state.t + 1,
             design_cluster_treatments=design_cluster_treatments,
             design_cluster_treatment_probs=design_cluster_treatment_probs,
-            design_cluster_counts=design_cluster_counts,
-            estimates=estimates,
             design_cluster_ids=design_cluster_ids,
             network_infos=network_infos,
-            window_ptr=(state.window_ptr + 1) % self.window_size,
+            estimate=estimate,
         )
 
-    def estimate(self, state: DNV2EstimatorState):
+    def estimate(self, state: DNV2EstimatorState, env, env_params):
         """Compute DN treatment effect estimate."""
-        N = state.design_cluster_counts.sum()
-        mask = state.design_cluster_counts > 0
-        z = state.design_cluster_treatments
-        p = state.design_cluster_treatment_probs
+        return state.estimate / state.t
 
-        def compute_estimate():
-            eta = z / p - (1 - z) / (1 - p)
-            avg_y = (
-                mask * state.estimates
-            ).sum() / state.design_cluster_counts.sum()
-            baseline = state.design_cluster_counts * avg_y
-            return (mask * eta * (state.estimates - baseline)).sum() / N
-
-        return jax.lax.cond(N > 0, lambda: compute_estimate(), lambda: 0.0)
