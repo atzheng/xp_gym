@@ -12,7 +12,7 @@ from xp_gym.simulator import simulate
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def run(cfg: DictConfig) -> None:
-    print(OmegaConf.to_yaml(cfg))
+    print(OmegaConf.to_yaml(cfg, resolve=True))
     seed = cfg.run.seed
 
     env = instantiate(cfg.env)
