@@ -107,7 +107,7 @@ class DynkinEstimator(Estimator):
             reg_param=self.reg_param,
         )
 
-    def update(self, state: DynkinEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: DynkinEstimatorState, obs: Observation):
         """
         Update Dynkin estimator with new observation.
         
@@ -197,7 +197,7 @@ class DynkinEstimator(Estimator):
             reg_param=state.reg_param,
         )
 
-    def estimate(self, state: DynkinEstimatorState):
+    def estimate(self, env, env_params, state: DynkinEstimatorState):
         """
         Compute Dynkin estimate using accumulated LSTD data.
         

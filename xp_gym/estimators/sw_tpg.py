@@ -82,7 +82,7 @@ class SwitchbackTPGEstimator(Estimator):
             total_observations=0
         )
 
-    def update(self, state: SwitchbackTPGEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: SwitchbackTPGEstimatorState, obs: Observation):
         """
         Update with cluster-level truncated policy gradient logic.
 
@@ -269,7 +269,7 @@ class SwitchbackTPGEstimator(Estimator):
             accumulate_in_current_cluster
         )
 
-    def estimate(self, state: SwitchbackTPGEstimatorState):
+    def estimate(self, env, env_params, state: SwitchbackTPGEstimatorState):
         """
         Compute final ATE estimate using policy gradient.
 

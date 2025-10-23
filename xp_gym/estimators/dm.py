@@ -27,7 +27,7 @@ class DMEstimator(Estimator):
     def reset(self, rng, env, env_params):
         return DMEstimatorState(0.0, 0, 0.0, 0)
 
-    def update(self, state: DMEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: DMEstimatorState, obs: Observation):
         # Accumulate rewards by treatment group (like original naive_update)
         treated_sum = jnp.where(
             obs.action,
@@ -54,7 +54,7 @@ class DMEstimator(Estimator):
             treated_sum, treated_count, control_sum, control_count
         )
 
-    def estimate(self, state: DMEstimatorState):
+    def estimate(self, env, env_params, state: DMEstimatorState):
         """
         Apply inverse probability weighting (matching original naive function).
         

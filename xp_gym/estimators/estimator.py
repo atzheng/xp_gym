@@ -24,13 +24,13 @@ class Estimator:
         """
         raise NotImplementedError("Initialize method must be implemented in subclass.")
 
-    def update(self, state: EstimatorState, obs: Observation):
+    def update(self, env: Environment, env_params: EnvParams, state: EstimatorState, obs: Observation):
         """
         Update the estimator with new data.
         """
         raise NotImplementedError("Update method must be implemented in subclass.")
 
-    def estimate(self, state: EstimatorState):
+    def estimate(self, env: Environment, env_params: EnvParams, state: EstimatorState):
         """
         Estimate the value based on the current state of the estimator.
         """

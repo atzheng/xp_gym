@@ -85,7 +85,7 @@ class DNEstimator(Estimator):
             design_p=0.5,
         )
 
-    def update(self, state: DNEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: DNEstimatorState, obs: Observation):
         """
         Update DN estimator - simplified to exactly match original DQ logic.
         """
@@ -129,7 +129,7 @@ class DNEstimator(Estimator):
             design_p=p,
         )
 
-    def estimate(self, state: DNEstimatorState):
+    def estimate(self, env, env_params, state: DNEstimatorState):
         """
         Compute DN estimate - exactly matching original DQ logic.
         """

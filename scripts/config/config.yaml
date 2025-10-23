@@ -32,12 +32,10 @@ estimators:
   dn:
     _target_: xp_gym.estimators.dn_v2.DNV2Estimator
     network: 
-      _target_: xp_gym.estimators.dn_v2.ManhattanSpatioTemporalNetwork
+      _target_: xp_gym.estimators.dn_v2.RideshareNetwork
       max_spatial_distance: 2
       lookahead_steps: 60
-      switch_every: ${design.switch_every}
-    n_events: ${env.n_events}
-    n_cars: ${env.n_cars}
+    window_size: 30
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
     k: 1

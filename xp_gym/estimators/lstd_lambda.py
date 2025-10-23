@@ -103,7 +103,7 @@ class LSTDLambdaEstimator(Estimator):
             lambda_param=self.lambda_,
         )
 
-    def update(self, state: LSTDLambdaEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: LSTDLambdaEstimatorState, obs: Observation):
         """
         Update LSTD-λ estimator with new observation.
         
@@ -197,7 +197,7 @@ class LSTDLambdaEstimator(Estimator):
             lambda_param=state.lambda_param,
         )
 
-    def estimate(self, state: LSTDLambdaEstimatorState):
+    def estimate(self, env, env_params, state: LSTDLambdaEstimatorState):
         """
         Compute LSTD-λ treatment effect estimate.
         
