@@ -1,8 +1,3 @@
-defaults:
-  - design/unit_randomized
-  - estimators/naive
-  - env/abtest
-
 run:
   output_path: "output/test_out.csv"
   n_envs: 100
@@ -34,13 +29,15 @@ estimators:
     _target_: xp_gym.estimators.naive.NaiveEstimator
   dm:
     _target_: xp_gym.estimators.dm.DMEstimator
-  # dn:
-  #   _target_: xp_gym.estimators.dn.DNEstimator
-  #   max_spatial_distance: 2
-  #   lookahead_steps: 600
-  #   switch_every: ${design.switch_every}
-  #   n_events: ${env.n_events}
-  #   n_cars: ${env.n_cars}
+  dn:
+    _target_: xp_gym.estimators.dn_v2.DNV2Estimator
+    network: 
+      _target_: xp_gym.estimators.dn_v2.ManhattanSpatioTemporalNetwork
+      max_spatial_distance: 2
+      lookahead_steps: 60
+      switch_every: ${design.switch_every}
+    n_events: ${env.n_events}
+    n_cars: ${env.n_cars}
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
     k: 1
@@ -56,4 +53,4 @@ estimators:
   #   _target_: xp_gym.estimators.lstd_lambda.LSTDLambdaEstimator
   #   alpha: 1.0
   #   lambda_: 0.0
-  #   discount_factor: 1.0
+  #   discount_factor: 1.0s

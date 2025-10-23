@@ -10,6 +10,8 @@ from xp_gym.designs.design import Design
 from xp_gym.observation import Observation
 
 
+
+
 @struct.dataclass
 class InterferenceNetworkState:
     pass
@@ -47,21 +49,22 @@ class InterferenceNetwork:
         return state
 
 
-@struct.dataclass
-class SpatioTemporalInterferenceNetworkState(InterferenceNetworkState):
-    space_ids: Integer[Array, "T"]
-    time_ids: Integer[Array, "T"]
+# @struct.dataclass
+# class SpatioTemporalInterferenceNetworkState(InterferenceNetworkState):
+#     space_ids: Integer[Array, "T"]
+#     time_ids: Integer[Array, "T"]
 
 
 @struct.dataclass
 class SpatioTemporalInterferenceNetwork(object):
-    T: int  # Time horizon
+    # T: int  # Time horizon
 
     def reset(self, rng: PRNGKey, env, env_params: EnvParams):
-        return SpatioTemporalInterferenceNetworkState(
-            space_ids=-jnp.ones(self.T, dtype=jnp.int32),
-            time_ids=-jnp.ones(self.T, dtype=jnp.int32),
-        )
+        raise NotImplementedError()
+        # return SpatioTemporalInterferenceNetworkState(
+        #     space_ids=-jnp.ones(self.T, dtype=jnp.int32),
+        #     time_ids=-jnp.ones(self.T, dtype=jnp.int32),
+        # )
 
     def in_edges(
         self, state: SpatioTemporalInterferenceNetworkState, obs: Observation
@@ -159,22 +162,23 @@ class HTClusterNetworkEstimator(ClusterNetworkEstimator):
             cluster_ids=base_state.cluster_ids,
             treatments=base_state.treatments,
             ps=base_state.ps,
-            estimate=jnp.zeros(1)
+            estimate=jnp.zeros(1),
         )
 
     def update(self, state: HTClusterNetworkEstimatorState, obs):
         new_base_state = super().update(state, obs)
         is_in_edge = self.network.in_edges(state.network_state, obs)
         is_tr = jnp.all(jnp.where(is_in_edge, state.treatments, False))
-        p_tr = 0.  # FIXME
+        p_tr = 0.0  # FIXME
         is_co = jnp.all(jnp.where(is_in_edge, ~state.treatments, False))
-        p_co = 0.
+        p_co = 0.0
         return HTClusterNetworkEstimatorState(
             network_state=new_base_state.network_state,
             cluster_ids=new_base_state.cluster_ids,
             treatments=new_base_state.treatments,
             ps=new_base_state.ps,
-            estimate=(is_tr / p_tr - is_co / p_co) * obs.reward + state.estimate,
+            estimate=(is_tr / p_tr - is_co / p_co) * obs.reward
+            + state.estimate,
         )
 
     def estimate(self, state: HTClusterNetworkEstimatorState):
