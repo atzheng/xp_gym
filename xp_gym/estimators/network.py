@@ -48,7 +48,7 @@ class InterferenceNetwork:
         raise NotImplementedError()
 
     def get_network_info(
-        self, env, env_params, obs: Observation
+        self, env, env_params, obs: Array 
     ) -> NetworkInfo:
         """
         Extract network-related information from an observation.

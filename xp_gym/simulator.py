@@ -32,7 +32,7 @@ def step(
         design_info=design_info,
     )
     new_est_states = {
-        est_name: estimator.update(est_states[est_name], new_xp_obs)
+        est_name: estimator.update(env, env_params, est_states[est_name], new_xp_obs)
         for est_name, estimator in estimators.items()
     }
     new_design_state = design.update(design_state, new_xp_obs)
@@ -58,7 +58,7 @@ def step_n_and_estimate(
     )
     est_states = carry[2]
     estimates = {
-        est_name: estimator.estimate(est_states[est_name])
+        est_name: estimator.estimate(env, env_params, est_states[est_name])
         for est_name, estimator in estimators.items()
     }
     return carry, estimates
