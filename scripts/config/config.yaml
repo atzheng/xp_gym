@@ -1,9 +1,16 @@
 run:
   output_path: "output/test_out.csv"
-  n_envs: 100
-  n_steps: 100000
+  n_envs: 1000
+  n_steps: 1000000
   estimate_every_n_steps: 1000
   seed: 42
+
+# Configuration for ATE computation, used by compute-ate.py
+ate:
+  output_path: "output/ate.csv"
+  k: 100  # Total number of trials
+  batch_size: 100  # Number of environments to run in parallel
+  n_steps: ${run.n_steps} # Number of events to simulate per trial
 
 env:
   _target_: xp_gym.environments.rideshare.XPRidesharePricingEnv
@@ -19,8 +26,8 @@ env_params:
     w_intercept: 4     # Base acceptance rate (high = customers generally accept rides)
 
 design:
-  # _target_: xp_gym.designs.design.SpatioClusterDesign
-  _target_: xp_gym.designs.design.SwitchbackDesign
+  _target_: xp_gym.designs.design.SpatioClusterDesign
+  # _target_: xp_gym.designs.design.SwitchbackDesign
   p: 0.5
   switch_every: 600
 
