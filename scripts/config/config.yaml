@@ -26,7 +26,7 @@ env_params:
     w_intercept: 4     # Base acceptance rate (high = customers generally accept rides)
 
 design:
-  _target_: xp_gym.designs.design.SpatioClusterDesign
+  _target_: xp_gym.designs.design.RideshareClusterDesign
   # _target_: xp_gym.designs.design.SwitchbackDesign
   p: 0.5
   switch_every: 600
