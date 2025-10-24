@@ -13,7 +13,8 @@ class NaiveEstimatorState(EstimatorState):
 @struct.dataclass
 class NaiveEstimator(Estimator):
     """
-    Naive estimator that computes the average outcome for treated and control groups.
+    Naive IPW estimator that computes the average outcome for treated and control groups,
+    ignoring interference
     """
 
     def reset(self, rng, env, env_params):

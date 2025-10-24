@@ -17,13 +17,8 @@ class DMEstimatorState(EstimatorState):
 @struct.dataclass
 class DMEstimator(Estimator):
     """
-    Cluster-based naive estimator that matches the original dn_estimator.py approach.
-    
-    This version accumulates rewards by treatment group and then applies IPW,
-    which is mathematically equivalent to the original cluster-based approach
-    but works better with our event-based framework.
+    Simple difference in means estimator, without IPW.
     """
-
     def reset(self, rng, env, env_params):
         return DMEstimatorState(0.0, 0, 0.0, 0)
 
@@ -55,14 +50,6 @@ class DMEstimator(Estimator):
         )
 
     def estimate(self, env, env_params, state: DMEstimatorState):
-        """
-        Apply inverse probability weighting (matching original naive function).
-        
-        Original logic: eta = z/p - (1-z)/(1-p), then (eta * estimates).sum() / N
-        This is equivalent to: treated_avg/p - control_avg/(1-p)
-        """
-        p = 0.5  # Treatment probability - should match design
-        
         # Avoid division by zero
         treated_avg = jnp.where(
             state.treated_count > 0,
