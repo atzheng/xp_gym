@@ -3,12 +3,14 @@ import jax
 from jax import Array
 import chex
 from jaxtyping import Integer
+from jax import numpy as jnp
 
 from xp_gym.estimators.estimator import Estimator, EstimatorState
 from xp_gym.designs.design import Design, DesignState
 from xp_gym.observation import Observation
 import gymnax
 from gymnax.environments.environment import EnvState, Environment, EnvParams
+from jax_tqdm import scan_tqdm
 
 
 def step(
@@ -32,7 +34,9 @@ def step(
         design_info=design_info,
     )
     new_est_states = {
-        est_name: estimator.update(env, env_params, est_states[est_name], new_xp_obs)
+        est_name: estimator.update(
+            env, env_params, est_states[est_name], new_xp_obs
+        )
         for est_name, estimator in estimators.items()
     }
     new_design_state = design.update(design_state, new_xp_obs)
@@ -95,16 +99,21 @@ def simulate(
     estimate_every_n_steps = estimate_every_n_steps or T
     n_estimates = T // estimate_every_n_steps
     rngs = jax.random.split(rng, n_estimates)
-    carry, results = jax.lax.scan(
-        jax.tree_util.Partial(
-            step_n_and_estimate,
+
+    @scan_tqdm(n_estimates, print_rate=10)
+    def scanner(carry, idx_and_rng):
+        idx, rng = idx_and_rng
+        return step_n_and_estimate(
             estimators,
             design,
             env,
             env_params,
+            carry,
+            rng,
             n=estimate_every_n_steps,
-        ),
-        init_carry,
-        rngs,
+        )
+
+    carry, results = jax.lax.scan(
+        scanner, init_carry, (jnp.arange(n_estimates), rngs)
     )
     return carry, results

@@ -18,6 +18,7 @@ or-gymnax = {git = "https://github.com/atzheng/or-gymnax.git"}
 pyarrow = "^21.0.0"
 tqdm = "^4.67.1"
 haversine = "^2.9.0"
+jax-tqdm = "^0.4.0"
 
 [build-system]
 requires = ["poetry-core"]
