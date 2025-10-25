@@ -16,25 +16,24 @@ def run(cfg: DictConfig) -> None:
     seed = cfg.run.seed
 
     env = instantiate(cfg.env)
-    
+
     # Handle nested env_params structure
     env_params_dict = dict(cfg.env_params)
-    if 'env_params' in env_params_dict:
+    if "env_params" in env_params_dict:
         # Update the inner env_params if specified
-        inner_env_params = env.default_params.env_params.replace(**env_params_dict['env_params'])
-        env_params_dict['env_params'] = inner_env_params
-    
+        inner_env_params = env.default_params.env_params.replace(
+            **env_params_dict["env_params"]
+        )
+        env_params_dict["env_params"] = inner_env_params
+
     env_params = env.default_params.replace(**env_params_dict)
-    
+
     # Create design and estimators using standard hydra instantiation
     design = instantiate(cfg.design)
     estimators = {k: instantiate(v) for k, v in cfg.estimators.items()}
-
     rng = jax.random.PRNGKey(seed)
     rngs = jax.random.split(rng, cfg.run.n_envs)
-    vmap_simulate = jax.vmap(
-        simulate, in_axes=(None, None, None, None, 0, None, None)
-    )
+    vmap_simulate = jax.vmap(simulate, in_axes=(None, None, None, None, 0, None, None))
 
     _, results = vmap_simulate(
         estimators,
