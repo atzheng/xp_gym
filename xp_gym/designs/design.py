@@ -157,13 +157,24 @@ def load_rideshare_clusters():
     nodes["lat"] = nodes["lat"].astype(float)
     nodes_zones = nodes.merge(zones, on="osmid")
 
+    centroids = nodes_zones.groupby("zone_id").aggregate(
+        {"lat": "mean", "lng": "mean"}
+    )
+    zone_dists = np.zeros((len(centroids), len(centroids)))
+    for i in range(len(centroids)):
+        for j in range(len(centroids)):
+            zone_dists[i, j] = haversine.haversine(
+                (centroids.iloc[i]["lat"], centroids.iloc[i]["lng"]),
+                (centroids.iloc[j]["lat"], centroids.iloc[j]["lng"]),
+            )
+
     # Convert to jax array
     max_src_idx = nodes_zones.index.max()
     src_to_zone = np.full(max_src_idx + 1, -1, dtype=np.int32)
     for idx, row in nodes_zones.iterrows():
         src_to_zone[idx] = row["zone_id"]
 
-    return jnp.array(src_to_zone)
+    return jnp.array(src_to_zone), jnp.array(zone_dists)
 
 
 @struct.dataclass
@@ -188,7 +199,7 @@ class RideshareClusterDesign(ClusterRandomizedDesign):
     def reset(
         self, rng: PRNGKey, env_params: EnvParams
     ) -> RideshareClusterDesignState:
-        src_to_zone = load_rideshare_clusters()
+        src_to_zone, _ = load_rideshare_clusters()
         return RideshareClusterDesignState(
             rng=rng,
             src_to_zone=src_to_zone,

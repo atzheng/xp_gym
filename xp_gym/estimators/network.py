@@ -11,8 +11,11 @@ from xp_gym.estimators.estimator import Estimator, EstimatorState
 from xp_gym.observation import Observation
 from or_gymnax.rideshare import obs_to_state
 from jaxtyping import Bool, Float, Integer
+from xp_gym.design import load_rideshare_clusters
 
 
+# General inteference networks
+# -------------------------------------------------------------------------
 @struct.dataclass
 class NetworkInfo:
     """
@@ -99,6 +102,8 @@ class CompleteInterferenceNetwork:
         return jnp.zeros(1)
 
 
+# Rideshare-specific inteference networks
+# -------------------------------------------------------------------------
 @struct.dataclass
 class RideshareNetworkInfo:
     time: Float[Array, ""] = field(
@@ -109,13 +114,66 @@ class RideshareNetworkInfo:
     )
 
 
+# @struct.dataclass
+# class ECRideshareNetworkState(InterferenceNetwork):
+#     src_to_zone: Integer[Array, "n_nodes"]
+#     zone_dists: Float[Array, "n_zones n_zones"]
+
+src_to_zone, zone_dists = load_rideshare_clusters()
+
+@struct.dataclass
+class ECRideshareNetwork(InterferenceNetwork):
+    """
+    An implementation of the interference network which, when used with DN,
+    replicates the results in the EC Paper
+    """
+    lookahead_steps: int = 600
+    max_spatial_distance: int = 2  # km
+    switch_every: int = 600
+    src_to_zone: Integer[Array, "n_nodes"] = src_to_zone
+    zone_dists: Float[Array, "n_zones n_zones"] = zone_dists
+
+    # def reset(
+    #         self, rng: PRNGKey, env, env_params: EnvParams
+    # ):
+    #     src_to_zone, zone_dists = load_rideshare_clusters()
+    #     return ECRideshareNetworkState(
+    #         src_to_zone=src_to_zone,
+    #         zone_dists=zone_dists
+    #     )
+
+    def get_network_info(
+        self, env: Environment, env_params: EnvParams, obs: Array
+    ) -> RideshareNetworkInfo:
+        """Extract cluster info (lat, lng, t) from observation."""
+        event, _, _ = obs_to_state(env_params.env_params.n_cars, obs)
+        return RideshareNetworkInfo(time=event.t, location=event.src)
+
+    def is_adjacent(
+        self,
+        env: Environment,
+        env_params: EnvParams,
+        x: RideshareNetworkInfo,
+        y: RideshareNetworkInfo,
+    ):
+        switch_every = self.switch_every
+        time_id = (x.time // switch_every + 1) * switch_every
+        is_time_adj = (time_id >= y.time - self.lookahead_steps) & (
+            time_id <= (y.time // switch_every + 1) * switch_every
+        )
+        space_id_x = self.src_to_zone[x.location]
+        space_id_y = self.src_to_zone[y.location]
+        is_space_adj = self.zone_dists[space_id_x, space_id_y] <= self.max_spatial_distance
+        return is_time_adj & is_space_adj
+
+
+
 @struct.dataclass
 class RideshareNetwork(InterferenceNetwork):
     """
     Concrete implementation of spatiotemporal interference network, where
     adjacency is defined based on spatial distance (km) and temporal distance (steps).
     """
-
     lookahead_steps: int = 600
     max_spatial_distance: int = 2  # km
 
@@ -148,10 +206,10 @@ class RideshareNetwork(InterferenceNetwork):
         return is_time_adj & is_space_adj
 
 
+# Estimator Base Class
+# -------------------------------------------------------------------------
 @struct.dataclass
 class LimitedMemoryNetworkEstimatorState(EstimatorState):
-    """State for DN v2 estimator using network abstractions."""
-
     t: int
     design_cluster_treatments: Bool[Array, "n_design_cluster_ids"]
     design_cluster_treatment_probs: Float[Array, "n_design_cluster_ids"]
@@ -263,9 +321,6 @@ class LimitedMemoryNetworkEstimator(Estimator):
         This is commonly needed for interference estimators.
         """
         cluster_id = obs.design_info.cluster_id
-        p = obs.design_info.p
-        treatment = obs.action.astype(jnp.float32)
-        reward = obs.reward
         new_network_info = self.network.get_network_info(
             env, env_params, obs.obs
         )
@@ -277,8 +332,11 @@ class LimitedMemoryNetworkEstimator(Estimator):
         )(env, env_params, state.network_infos, new_network_info)
         # Ensures that dummy entries (during first window) are ignored
         not_dummy = jnp.arange(self.window_size) <= state.t
-        # Each cluster should be represented by its first occurrence
-        is_first = is_first_occurrence(state.design_cluster_ids)
+        # Each design cluster should be represented by its first occurrence
+        # which is adjacent
+        is_first = is_first_occurrence(
+            jnp.where(is_adjacent, state.design_cluster_ids, -1)
+        )
         is_different_cluster = state.design_cluster_ids != cluster_id
         return is_adjacent & not_dummy & is_first & is_different_cluster
 
