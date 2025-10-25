@@ -11,7 +11,7 @@ from xp_gym.estimators.estimator import Estimator, EstimatorState
 from xp_gym.observation import Observation
 from or_gymnax.rideshare import obs_to_state
 from jaxtyping import Bool, Float, Integer
-from xp_gym.design import load_rideshare_clusters
+from xp_gym.designs.design import load_rideshare_clusters
 
 
 # General inteference networks
@@ -347,6 +347,7 @@ def is_first_occurrence(x):
     is the first occurrence of that element.
     """
     asort = jnp.argsort(x)
+    inverse_sort = jnp.argsort(asort)
     xsort = x[asort]
     is_diff_than_prev = ((xsort - jnp.roll(xsort, 1)) != 0).at[0].set(1)
-    return is_diff_than_prev[jnp.argsort(x)]
+    return is_diff_than_prev[inverse_sort]

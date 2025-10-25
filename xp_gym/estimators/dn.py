@@ -49,8 +49,7 @@ class LimitedMemoryDNEstimator(LimitedMemoryNetworkEstimator):
         zc = lms.design_cluster_treatments
         pc = lms.design_cluster_treatment_probs
         interference_mask = self.interference_mask(env, env_params, lms, obs)
-        # baseline = state.sum_rewards / (lms.t + 1)    # use avg reward as doubly robust baseline
-        baseline = 0
+        baseline = state.sum_rewards / (lms.t + 1)    # use avg reward as doubly robust baseline
 
         z = treatment
         xi = z * (1 - p) / p + (1 - z) * p / (1 - p)

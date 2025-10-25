@@ -1,6 +1,6 @@
 run:
   output_path: "output/test_out.csv"
-  n_envs: 1000
+  n_envs: 100
   n_steps: 500000
   estimate_every_n_steps: 1000
   seed: 42
@@ -27,7 +27,6 @@ env_params:
 
 design:
   _target_: xp_gym.designs.design.RideshareClusterDesign
-  # _target_: xp_gym.designs.design.SwitchbackDesign
   p: 0.5
   switch_every: 600
 
@@ -46,10 +45,9 @@ estimators:
   dn:
     _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
     network: 
-      _target_: xp_gym.estimators.network.ECRideshareNetwork
+      _target_: xp_gym.estimators.network.RideshareNetwork
       max_spatial_distance: 2
       lookahead_steps: 600
-      switch_every: 600
     window_size: 2000
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
