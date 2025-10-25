@@ -1,7 +1,7 @@
 run:
   output_path: "output/test_out.csv"
   n_envs: 1000
-  n_steps: 1000000
+  n_steps: 500000
   estimate_every_n_steps: 1000
   seed: 42
 
@@ -36,13 +36,21 @@ estimators:
     _target_: xp_gym.estimators.naive.NaiveEstimator
   dm:
     _target_: xp_gym.estimators.dm.DMEstimator
-  dn:
-    _target_: xp_gym.estimators.dn_v2.DNV2Estimator
+  ht:
+    _target_: xp_gym.estimators.ht.LimitedMemoryHTEstimator
     network: 
-      _target_: xp_gym.estimators.dn_v2.RideshareNetwork
+      _target_: xp_gym.estimators.network.RideshareNetwork
       max_spatial_distance: 2
-      lookahead_steps: 60
-    window_size: 30
+      lookahead_steps: 600
+    window_size: 2000
+  dn:
+    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+    network: 
+      _target_: xp_gym.estimators.network.ECRideshareNetwork
+      max_spatial_distance: 2
+      lookahead_steps: 600
+      switch_every: 600
+    window_size: 2000
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
     k: 1
@@ -50,12 +58,3 @@ estimators:
     _target_: xp_gym.estimators.sw_tpg.SwitchbackTPGEstimator
     k: 1
     switch_every: ${design.switch_every}
-  # dynkin:
-  #   _target_: xp_gym.estimators.dynkin.DynkinEstimator
-  #   reg_param: 1e-3
-  #   discount_factor: 1.0
-  # lstd_lambda:
-  #   _target_: xp_gym.estimators.lstd_lambda.LSTDLambdaEstimator
-  #   alpha: 1.0
-  #   lambda_: 0.0
-  #   discount_factor: 1.0s
