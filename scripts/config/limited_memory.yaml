@@ -1,0 +1,49 @@
+# Simple testbed for interference estimators, using an env with
+# arbitrary interference over a limited window.
+ 
+run:
+  output_path: "output/test_out.csv"
+  n_envs: 100
+  n_steps: 1000000
+  estimate_every_n_steps: 10000
+  seed: 42
+
+# Configuration for ATE computation, used by compute-ate.py
+ate:
+  output_path: "output/ate.csv"
+  k: 100  # Total number of trials
+  batch_size: 100  # Number of environments to run in parallel
+  n_steps: ${run.n_steps} # Number of events to simulate per trial
+
+env_params: {}
+
+env:
+  _target_: xp_gym.environments.limited_memory.LimitedMemoryEnv
+
+design:
+  _target_: xp_gym.designs.design.UnitRandomizedDesign
+  # _target_: xp_gym.designs.design.SwitchbackDesign
+  # time_attr: "time"
+  # switch_every: 8
+  p: 0.5
+
+estimators:
+  naive:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
+  dm:
+    _target_: xp_gym.estimators.dm.DMEstimator
+  ht:
+    _target_: xp_gym.estimators.ht.LimitedMemoryHTEstimator
+    network: 
+      _target_: xp_gym.estimators.network.CompleteInterferenceNetwork
+      # _target_: xp_gym.estimators.network.EmptyInterferenceNetwork
+    window_size: 8
+  dn:
+    _target_: xp_gym.estimators.dn_v2.LimitedMemoryDNEstimator
+    network: 
+      _target_: xp_gym.estimators.network.CompleteInterferenceNetwork
+      # _target_: xp_gym.estimators.network.EmptyInterferenceNetwork
+    window_size: 8
+  tpg:
+    _target_: xp_gym.estimators.tpg.TPGEstimator
+    k: 1

@@ -1,13 +1,16 @@
 from flax import struct
 from chex import PRNGKey
-from gymnax.environments.environment import EnvParams
+from gymnax.environments.environment import Environment, EnvParams
 from jaxtyping import Float, Integer, Bool
 from jax import Array
 import jax.numpy as jnp
+import jax
+from dataclasses import field
 
 from xp_gym.estimators.estimator import Estimator, EstimatorState
-from xp_gym.designs.design import Design
 from xp_gym.observation import Observation
+from or_gymnax.rideshare import obs_to_state
+from jaxtyping import Bool, Float, Integer
 
 
 @struct.dataclass
@@ -34,6 +37,16 @@ class InterferenceNetworkState:
 class InterferenceNetwork:
     """
     A collection of methods that define the structure of an interference network.
+
+    At minimum, this defines:
+
+    1) get_network_info: extracts information from an observation
+         required to determine which other observation it interferes with
+         (e.g., an identifier of its corresponding node in the
+          interference network)
+
+    2) is_adjacent: given two NetworkInfo objects, determine whether
+         they represent adjacent nodes
     """
 
     def reset(
@@ -47,13 +60,12 @@ class InterferenceNetwork:
         """
         raise NotImplementedError()
 
-    def get_network_info(
-        self, env, env_params, obs: Array 
-    ) -> NetworkInfo:
+    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
         """
         Extract network-related information from an observation.
+        By default, simply returns the observation.
         """
-        raise NotImplementedError()
+        return obs
 
     def update(
         self, state: InterferenceNetworkState, obs: Observation
@@ -65,177 +77,218 @@ class InterferenceNetwork:
         return state
 
 
-# @struct.dataclass
-# class InterferenceNetworkState:
-#     pass
+@struct.dataclass
+class EmptyInterferenceNetwork:
+    """A network object representing a graph with no edges; for sanity checks"""
+    def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
+        return False
+
+    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
+        # Just a dummy object
+        return jnp.zeros(1)
 
 
-# @struct.dataclass
-# class InterferenceNetwork:
-#     """
-#     A collection of methods that define the structure of an interference network.
-#     """
+@struct.dataclass
+class CompleteInterferenceNetwork:
+    """A network object representing a complete graph"""
+    def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
+        return True
 
-#     def reset(
-#         self, rng: PRNGKey, env, env_params: EnvParams
-#     ) -> InterferenceNetworkState:
-#         return InterferenceNetworkState()
-#         # Initialize any graph structure here
-
-#     def in_edges(
-#         self, state: InterferenceNetworkState, obs: Observation
-#     ) -> Bool[Array, "n_edges"]:
-#         raise NotImplementedError()
-
-#     def out_edges(
-#         self, state: InterferenceNetworkState, obs: Observation
-#     ) -> Bool[Array, "n_edges"]:
-#         raise NotImplementedError()
-
-#     def update(
-#         self, state: InterferenceNetworkState, obs: Observation
-#     ) -> InterferenceNetworkState:
-#         """
-#         Update the network state based on the new observation.
-#         """
-#         # Update the state based on the new observation
-#         return state
+    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
+        # Just a dummy object
+        return jnp.zeros(1)
 
 
-# # @struct.dataclass
-# # class SpatioTemporalInterferenceNetworkState(InterferenceNetworkState):
-# #     space_ids: Integer[Array, "T"]
-# #     time_ids: Integer[Array, "T"]
+@struct.dataclass
+class RideshareNetworkInfo:
+    time: Float[Array, ""] = field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.float32)
+    )
+    location: Integer[Array, ""] = field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.int32)
+    )
 
 
-# @struct.dataclass
-# class SpatioTemporalInterferenceNetwork(object):
-#     # T: int  # Time horizon
+@struct.dataclass
+class RideshareNetwork(InterferenceNetwork):
+    """
+    Concrete implementation of spatiotemporal interference network, where
+    adjacency is defined based on spatial distance (km) and temporal distance (steps).
+    """
 
-#     def reset(self, rng: PRNGKey, env, env_params: EnvParams):
-#         raise NotImplementedError()
-#         # return SpatioTemporalInterferenceNetworkState(
-#         #     space_ids=-jnp.ones(self.T, dtype=jnp.int32),
-#         #     time_ids=-jnp.ones(self.T, dtype=jnp.int32),
-#         # )
+    lookahead_steps: int = 600
+    max_spatial_distance: int = 2  # km
 
-#     def in_edges(
-#         self, state: SpatioTemporalInterferenceNetworkState, obs: Observation
-#     ) -> Integer[Array, "T"]:
-#         raise NotImplementedError()
+    def get_network_info(
+        self, env: Environment, env_params: EnvParams, obs: Array
+    ) -> RideshareNetworkInfo:
+        """Extract cluster info (lat, lng, t) from observation."""
+        event, _, _ = obs_to_state(env_params.env_params.n_cars, obs)
+        return RideshareNetworkInfo(time=event.t, location=event.src)
 
-#     def get_space_id(self, obs: Observation) -> int:
-#         raise NotImplementedError()
-
-#     def get_time_id(self, obs: Observation) -> int:
-#         raise NotImplementedError()
-
-#     def update(
-#         self, state: SpatioTemporalInterferenceNetworkState, obs: Observation
-#     ) -> SpatioTemporalInterferenceNetworkState:
-#         """
-#         Update the network state based on the new observation.
-#         """
-#         # Update the state based on the new observation
-#         return SpatioTemporalInterferenceNetworkState(
-#             space_ids=state.space_ids.at[obs.t].set(self.get_space_id(obs)),
-#             time_ids=state.time_ids.at[obs.t].set(self.get_time_id(obs)),
-#         )
-
-
-# @struct.dataclass
-# class ClusterNetworkEstimatorState(Estimator):
-#     network_state: InterferenceNetworkState
-#     cluster_ids: Integer[Array, "T"]  # Cluster IDs for each time step
-#     treatments: Integer[Array, "T"]  # Treatments assigned at each time step
-#     ps: Float[
-#         Array, "T"
-#     ]  # Probabilities of treatment assignment at each time step
+    def is_adjacent(
+        self,
+        env: Environment,
+        env_params: EnvParams,
+        x: RideshareNetworkInfo,
+        y: RideshareNetworkInfo,
+    ):
+        """Check if the edge (x, y) exists in the interference graph (i.e., x affects y)."""
+        is_space_adj = (
+            (
+                env_params.env_params.distances[x.location, y.location]
+                * 9
+                / 1000
+            )  # Matrix is in units of seconds, assuming 9 m/s driving
+            <= self.max_spatial_distance
+        )
+        is_time_adj = ((y.time - x.time) < self.lookahead_steps) & (
+            y.time > x.time
+        )
+        return is_time_adj & is_space_adj
 
 
-# @struct.dataclass
-# class ClusterNetworkEstimator(Estimator):
-#     """
-#     Estimator that accounts for interference in a known network structure,
-#     """
+@struct.dataclass
+class LimitedMemoryNetworkEstimatorState(EstimatorState):
+    """State for DN v2 estimator using network abstractions."""
 
-#     network: InterferenceNetwork
-#     T: int  # Time horizon
-#     # Need to somehow compute the probability of seeing arbitrary treatment vectors
-
-#     def reset(self, rng: PRNGKey, env, env_params: EnvParams):
-#         """
-#         Initialize the network estimator with necessary parameters.
-#         """
-#         # Initialize any state variables needed for the estimator
-#         return ClusterNetworkEstimatorState(
-#             network_state=self.network.reset(rng, env_params),
-#             cluster_ids=-jnp.ones(self.T, dtype=jnp.int32),
-#             treatments=-jnp.ones(self.T, dtype=jnp.int32),
-#             ps=-jnp.ones(self.T, dtype=jnp.float32),
-#         )
-
-#     def update(
-#         self, state: ClusterNetworkEstimatorState, obs: Observation, env, env_params
-#     ) -> ClusterNetworkEstimatorState:
-#         """
-#         Update the estimator with new data, considering network interference.
-#         """
-#         # Update the state based on the new observation
-#         cluster_id = obs.design_info.cluster_id
-#         p = obs.design_info.cluster_id
-#         new_network_state = self.network.update(state.network_state, obs)
-#         t = obs.state.time
-#         return ClusterNetworkEstimatorState(
-#             network_state=new_network_state,
-#             cluster_ids=state.cluster_ids.at[t].set(cluster_id),
-#             treatments=state.treatments.at[t].set(obs.action),
-#             ps=state.ps.at[t].set(p),
-#         )
+    t: int
+    design_cluster_treatments: Bool[Array, "n_design_cluster_ids"]
+    design_cluster_treatment_probs: Float[Array, "n_design_cluster_ids"]
+    design_cluster_ids: Integer[Array, "window_size"]
+    network_infos: NetworkInfo
+    estimate: Float[Array, ""]
 
 
-# @struct.dataclass
-# class HTClusterNetworkEstimatorState(ClusterNetworkEstimatorState):
-#     estimate: Float[Array, ""]  # Current estimate of the treatment effect
+@struct.dataclass
+class LimitedMemoryNetworkEstimator(Estimator):
+    """
+    Base class for an estimator that computes interference based on a
+    limited memory window.
+
+    Many exact estimators for interference need to store all
+    observations in order to compute interference effects;
+    this approximates that behavior by assuming there is no interference
+    outside of a fixed window size.
+
+    This approximation be removed by setting the window size sufficiently large.
+    """
+
+    network: InterferenceNetwork
+    window_size: int
+
+    def reset(self, rng, env, env_params):
+        """Initialize DN v2 estimator with network state."""
+        dummy_obs, _ = env.reset(jax.random.PRNGKey(0), env_params)
+        network_infos = jax.vmap(
+            lambda _: self.network.get_network_info(env, env_params, dummy_obs)
+        )(
+            jnp.zeros((self.window_size,))  # Dummy initialization
+        )
+
+        return LimitedMemoryNetworkEstimatorState(
+            t=0,
+            design_cluster_treatments=jnp.zeros(
+                (self.window_size,), dtype=jnp.bool_
+            ),
+            design_cluster_treatment_probs=jnp.ones(
+                (self.window_size,), dtype=jnp.bool_
+            )
+            * 0.5,
+            design_cluster_ids=jnp.zeros((self.window_size,), dtype=jnp.int32),
+            network_infos=network_infos,
+            estimate=jnp.array(0.0, dtype=jnp.float32),
+        )
+
+    def update(
+        self,
+        env: Environment,
+        env_params: EnvParams,
+        state: LimitedMemoryNetworkEstimatorState,
+        obs: Observation,
+    ):
+        """
+        Update DN v2 estimator using network interference structure.
+        """
+        # Extract observation info
+        cluster_id = obs.design_info.cluster_id
+        p = obs.design_info.p
+        treatment = obs.action.astype(jnp.float32)
+        reward = obs.reward
+        z = treatment
+        new_network_info = self.network.get_network_info(
+            env, env_params, obs.obs
+        )
+
+        # Replace info stored in the window with info from the current step
+        # Update network info at current position
+        # -------------------------------------------------------------------------
+        window_ptr = state.t % self.window_size
+        design_cluster_ids = state.design_cluster_ids.at[window_ptr].set(
+            cluster_id
+        )
+        zc = state.design_cluster_treatments
+        pc = state.design_cluster_treatment_probs
+        design_cluster_treatments = zc.at[window_ptr].set(z)
+        design_cluster_treatment_probs = pc.at[window_ptr].set(p)
+        network_infos = jax.tree.map(
+            lambda a, b: a.at[window_ptr].set(b),
+            state.network_infos,
+            new_network_info,
+        )
+
+        return LimitedMemoryNetworkEstimatorState(
+            t=state.t + 1,
+            design_cluster_treatments=design_cluster_treatments,
+            design_cluster_treatment_probs=design_cluster_treatment_probs,
+            design_cluster_ids=design_cluster_ids,
+            network_infos=network_infos,
+            estimate=state.estimate,
+        )
+
+    def interference_mask(
+        self,
+        env: Environment,
+        env_params: EnvParams,
+        state: LimitedMemoryNetworkEstimatorState,
+        obs: Observation,
+    ) -> Bool[Array, "self.window_size"]:
+        """
+        Returns a mask of length self.window_size, where each
+        unique cluster in the window which may interfere with obs
+        will have exactly one "True" entry in the mask,
+        corresponding to an arbitrary observation
+        in the window from that cluster.
+
+        This is commonly needed for interference estimators.
+        """
+        cluster_id = obs.design_info.cluster_id
+        p = obs.design_info.p
+        treatment = obs.action.astype(jnp.float32)
+        reward = obs.reward
+        new_network_info = self.network.get_network_info(
+            env, env_params, obs.obs
+        )
+
+        # Determine which other elements of the window represent
+        # interfering observations
+        is_adjacent = jax.vmap(
+            self.network.is_adjacent, in_axes=(None, None, 0, None)
+        )(env, env_params, state.network_infos, new_network_info)
+        # Ensures that dummy entries (during first window) are ignored
+        not_dummy = jnp.arange(self.window_size) <= state.t
+        # Each cluster should be represented by its first occurrence
+        is_first = is_first_occurrence(state.design_cluster_ids)
+        is_different_cluster = state.design_cluster_ids != cluster_id
+        return is_adjacent & not_dummy & is_first & is_different_cluster
 
 
-# @struct.dataclass
-# class HTClusterNetworkEstimator(ClusterNetworkEstimator):
-#     """
-#     Horvitz-Thompson estimator that accounts for interference in a known network structure,
-#     """
-
-#     def reset(self, rng: PRNGKey, env, env_params: EnvParams):
-#         """
-#         Initialize the HT network estimator with necessary parameters.
-#         """
-#         base_state = super().reset(rng, env_params)
-#         return HTClusterNetworkEstimatorState(
-#             network_state=base_state.network_state,
-#             cluster_ids=base_state.cluster_ids,
-#             treatments=base_state.treatments,
-#             ps=base_state.ps,
-#             estimate=jnp.zeros(1),
-#         )
-
-#     def update(self, state: HTClusterNetworkEstimatorState, obs, env, env_params):
-#         new_base_state = super().update(state, obs, env, env_params)
-#         is_in_edge = self.network.in_edges(state.network_state, obs)
-#         is_tr = jnp.all(jnp.where(is_in_edge, state.treatments, False))
-#         p_tr = 0.0  # FIXME
-#         is_co = jnp.all(jnp.where(is_in_edge, ~state.treatments, False))
-#         p_co = 0.0
-#         return HTClusterNetworkEstimatorState(
-#             network_state=new_base_state.network_state,
-#             cluster_ids=new_base_state.cluster_ids,
-#             treatments=new_base_state.treatments,
-#             ps=new_base_state.ps,
-#             estimate=(is_tr / p_tr - is_co / p_co) * obs.reward
-#             + state.estimate,
-#         )
-
-#     def estimate(self, state: HTClusterNetworkEstimatorState, env, env_params):
-#         """
-#         Estimate the value based on the current state of the estimator.
-#         """
-#         return state.estimate
+def is_first_occurrence(x):
+    """
+    Returns a boolean array indicating whether each element in x
+    is the first occurrence of that element.
+    """
+    asort = jnp.argsort(x)
+    xsort = x[asort]
+    is_diff_than_prev = ((xsort - jnp.roll(xsort, 1)) != 0).at[0].set(1)
+    return is_diff_than_prev[jnp.argsort(x)]
