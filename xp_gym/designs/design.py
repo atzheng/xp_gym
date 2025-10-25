@@ -163,7 +163,7 @@ def load_rideshare_clusters():
     zone_dists = np.zeros((len(centroids), len(centroids)))
     for i in range(len(centroids)):
         for j in range(len(centroids)):
-            zone_dists[i, j] = haversine.haversine(
+            zone_dists[i, j] = haversine(
                 (centroids.iloc[i]["lat"], centroids.iloc[i]["lng"]),
                 (centroids.iloc[j]["lat"], centroids.iloc[j]["lng"]),
             )
