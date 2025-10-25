@@ -29,6 +29,8 @@ class LimitedMemoryDNEstimator(LimitedMemoryNetworkEstimator):
     unit A can only suffer interference effects from another unit B if
     B arrives in some fixed window BEFORE A.
     """
+    baseline: float = 0.0  # Baseline for simple doubly robust adjustment
+
     def reset(self, rng, env, env_params):
         """Initialize DN v2 estimator with network state."""
         lms = super().reset(rng, env, env_params)
@@ -49,7 +51,6 @@ class LimitedMemoryDNEstimator(LimitedMemoryNetworkEstimator):
         zc = lms.design_cluster_treatments
         pc = lms.design_cluster_treatment_probs
         interference_mask = self.interference_mask(env, env_params, lms, obs)
-        baseline = state.sum_rewards / (lms.t + 1)    # use avg reward as doubly robust baseline
 
         z = treatment
         xi = z * (1 - p) / p + (1 - z) * p / (1 - p)
@@ -58,10 +59,10 @@ class LimitedMemoryDNEstimator(LimitedMemoryNetworkEstimator):
             lms.estimate
             + jnp.sum(
                 interference_mask * (
-                    (zc / pc - (1 - zc) / (1 - pc)) * (xi * reward - baseline)
+                    (zc / pc - (1 - zc) / (1 - pc)) * (xi * reward - self.baseline)
                 )
             )
-            + (z / p - (1 - z) / (1 - p)) * (reward - baseline)
+            + (z / p - (1 - z) / (1 - p)) * (reward - self.baseline)
         )
 
         new_lms = (

@@ -49,6 +49,7 @@ estimators:
       max_spatial_distance: 2
       lookahead_steps: 600
     window_size: 2000
+    baseline: 2
   tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
     k: 1
