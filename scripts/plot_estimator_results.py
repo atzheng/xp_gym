@@ -4,6 +4,7 @@ Plot mean estimations with confidence intervals for different estimators over ti
 """
 
 import argparse
+import os
 import pandas as pd
 import matplotlib
 
@@ -12,6 +13,86 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from scipy import stats
+
+
+def parse_ate_argument(ate_arg):
+    """
+    Parse the ate argument which can be either a float or a CSV file path.
+    If it's a CSV file, compute ATE as mean(B) - mean(A).
+    """
+    try:
+        # First try to parse as float
+        return float(ate_arg)
+    except ValueError:
+        # If that fails, try to read as CSV file
+        try:
+            df = pd.read_csv(ate_arg)
+            if "A" not in df.columns or "B" not in df.columns:
+                raise ValueError(
+                    f"CSV file {ate_arg} must contain columns 'A' and 'B'"
+                )
+            ate = df["B"].mean() - df["A"].mean()
+            print(f"Computed ATE from {ate_arg}: {ate:.6f}")
+            return ate
+        except Exception as e:
+            raise ValueError(
+                f"Could not parse ate argument '{ate_arg}' as float or CSV file: {e}"
+            )
+
+
+def compute_summary_stats(df, true_ate, output_path=None):
+    """
+    Compute bias, variance, and RMSE for each estimator at the final time step.
+    Optionally save to CSV if output_path is provided.
+    """
+    # Get final estimates for each environment
+    final_estimates = df[df["steps"] == df["steps"].max()]
+    estimator_cols = [
+        col for col in df.columns if col not in ["env_id", "steps"]
+    ]
+
+    summary_stats = []
+
+    for estimator in estimator_cols:
+        estimates = final_estimates[estimator]
+
+        # Compute statistics
+        mean_estimate = estimates.mean()
+        bias = mean_estimate - true_ate
+        variance = estimates.var(ddof=1)  # Sample variance
+        rmse = np.sqrt(((estimates - true_ate) ** 2).mean())
+
+        summary_stats.append(
+            {
+                "estimator": estimator,
+                "bias": bias,
+                "variance": variance,
+                "rmse": rmse,
+                "mean_estimate": mean_estimate,
+                "true_ate": true_ate,
+                "n_samples": len(estimates),
+            }
+        )
+
+    summary_df = pd.DataFrame(summary_stats)
+
+    # Print summary
+    print("\n=== Summary Statistics (Final Time Step) ===")
+    print(
+        f"{'Estimator':<15} {'Bias':<10} {'Variance':<10} {'RMSE':<10} {'Mean Est.':<10}"
+    )
+    print("-" * 70)
+    for _, row in summary_df.iterrows():
+        print(
+            f"{row['estimator']:<15} {row['bias']:<10.6f} {row['variance']:<10.6f} {row['rmse']:<10.6f} {row['mean_estimate']:<10.6f}"
+        )
+
+    # Save to CSV if path provided
+    if output_path:
+        summary_df.to_csv(output_path, index=False)
+        print(f"\nSummary statistics saved to: {output_path}")
+
+    return summary_df
 
 
 def plot_estimator_results(
@@ -187,7 +268,6 @@ def plot_estimator_comparison(
         value_name="Final_Estimate",
     )
 
-
     # Create box plot
     plt.figure(figsize=(12, 7))
     ax = sns.boxplot(data=melted, x="Estimator", y="Final_Estimate")
@@ -244,9 +324,7 @@ def plot_estimator_comparison(
         alpha=0.8,
     )
 
-    ax.set_xticklabels(
-        estimator_cols, rotation=0, ha="center"
-    )
+    ax.set_xticklabels(estimator_cols, rotation=0, ha="center")
 
     # plt.title('Distribution of Final Treatment Effect Estimates', fontsize=14, fontweight='bold')
     plt.ylabel("Estimated ATE", fontsize=12)
@@ -276,38 +354,53 @@ if __name__ == "__main__":
         description="Plot mean estimations with confidence intervals for different estimators over time."
     )
     parser.add_argument(
-        "csv_path",
-        help="Path to the CSV file containing estimator results"
+        "csv_path", help="Path to the CSV file containing estimator results"
     )
     parser.add_argument(
-        "--ate", 
-        type=float,
+        "--ate",
+        type=str,
         required=True,
-        help="True Average Treatment Effect value"
+        help="True Average Treatment Effect value (float) or path to CSV file from compute-ate.py",
     )
     parser.add_argument(
-        "--convergence-output",
-        default="estimator_convergence.png",
-        help="Output path for convergence plot (default: estimator_convergence.png)"
+        "--output-dir",
+        default="plots",
+        help="Output directory for all generated files (default: plots)",
     )
-    parser.add_argument(
-        "--comparison-output",
-        default="estimator_comparison.png",
-        help="Output path for comparison plot (default: estimator_comparison.png)"
-    )
-    
+
     args = parser.parse_args()
-    
+
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+    print(f"Output directory: {args.output_dir}")
+
+    # Define output paths using the output directory
+    convergence_output = os.path.join(
+        args.output_dir, "estimator_convergence.png"
+    )
+    comparison_output = os.path.join(
+        args.output_dir, "estimator_comparison.png"
+    )
+    summary_stats_output = os.path.join(
+        args.output_dir, "estimator_summary_stats.csv"
+    )
+
+    # Parse the ate argument (could be float or CSV path)
+    true_ate = parse_ate_argument(args.ate)
+
     # Plot convergence over time
     df = plot_estimator_results(
         csv_path=args.csv_path,
-        output_path=args.convergence_output,
-        true_ate=args.ate
+        output_path=convergence_output,
+        true_ate=true_ate,
     )
 
     # Plot final estimate comparison
     plot_estimator_comparison(
-        csv_path=args.csv_path,
-        output_path=args.comparison_output,
-        true_ate=args.ate
+        csv_path=args.csv_path, output_path=comparison_output, true_ate=true_ate
+    )
+
+    # Compute and save summary statistics
+    summary_stats = compute_summary_stats(
+        df=df, true_ate=true_ate, output_path=summary_stats_output
     )
