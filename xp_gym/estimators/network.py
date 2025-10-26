@@ -2,6 +2,7 @@ from flax import struct
 from chex import PRNGKey
 from gymnax.environments.environment import Environment, EnvParams
 from jaxtyping import Float, Integer, Bool
+from typing import Tuple
 from jax import Array
 import jax.numpy as jnp
 import jax
@@ -82,6 +83,7 @@ class InterferenceNetwork:
 @struct.dataclass
 class EmptyInterferenceNetwork:
     """A network object representing a graph with no edges; for sanity checks"""
+
     def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
         return False
 
@@ -93,6 +95,7 @@ class EmptyInterferenceNetwork:
 @struct.dataclass
 class CompleteInterferenceNetwork:
     """A network object representing a complete graph"""
+
     def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
         return True
 
@@ -119,6 +122,7 @@ class RideshareNetwork(InterferenceNetwork):
     Concrete implementation of spatiotemporal interference network, where
     adjacency is defined based on spatial distance (km) and temporal distance (steps).
     """
+
     lookahead_steps: int = 600
     max_spatial_distance: int = 2  # km
 
@@ -277,22 +281,13 @@ class LimitedMemoryNetworkEstimator(Estimator):
         )(env, env_params, state.network_infos, new_network_info)
         # Ensures that dummy entries (during first window) are ignored
         not_dummy = jnp.arange(self.window_size) <= state.t
-        # Each design cluster should be represented by its first occurrence
-        # which is adjacent
-        is_first = is_first_occurrence(
-            jnp.where(is_adjacent, state.design_cluster_ids, -1)
-        )
         is_different_cluster = state.design_cluster_ids != cluster_id
-        return is_adjacent & not_dummy & is_first & is_different_cluster
-
-
-def is_first_occurrence(x):
-    """
-    Returns a boolean array indicating whether each element in x
-    is the first occurrence of that element.
-    """
-    asort = jnp.argsort(x)
-    inverse_sort = jnp.argsort(asort)
-    xsort = x[asort]
-    is_diff_than_prev = ((xsort - jnp.roll(xsort, 1)) != 0).at[0].set(1)
-    return is_diff_than_prev[inverse_sort]
+        can_interfere = is_adjacent & not_dummy & is_different_cluster
+        vals, ix = jnp.unique(
+            jnp.where(can_interfere, state.design_cluster_ids, -1),
+            return_index=True,
+            size=self.window_size,
+            fill_value=-1,
+        )
+        mask = jnp.zeros(self.window_size + 1).at[ix].set(vals != -1)[:-1]
+        return mask
