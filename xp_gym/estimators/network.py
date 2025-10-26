@@ -57,13 +57,13 @@ class InterferenceNetwork:
     ) -> InterferenceNetworkState:
         return InterferenceNetworkState()
 
-    def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
+    def is_adjacent(self, env, env_params, network_state: InterferenceNetworkState, x: NetworkInfo, y: NetworkInfo):
         """
         Determine if two network info objects are adjacent in the interference network.
         """
         raise NotImplementedError()
 
-    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
+    def get_network_info(self, env, env_params, network_state: InterferenceNetworkState, obs: Array) -> NetworkInfo:
         """
         Extract network-related information from an observation.
         By default, simply returns the observation.
@@ -84,24 +84,36 @@ class InterferenceNetwork:
 class EmptyInterferenceNetwork:
     """A network object representing a graph with no edges; for sanity checks"""
 
-    def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams) -> InterferenceNetworkState:
+        return InterferenceNetworkState()
+
+    def is_adjacent(self, env, env_params, network_state: InterferenceNetworkState, x: NetworkInfo, y: NetworkInfo):
         return False
 
-    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
+    def get_network_info(self, env, env_params, network_state: InterferenceNetworkState, obs: Array) -> NetworkInfo:
         # Just a dummy object
         return jnp.zeros(1)
+
+    def update(self, state: InterferenceNetworkState, obs: Observation) -> InterferenceNetworkState:
+        return state
 
 
 @struct.dataclass
 class CompleteInterferenceNetwork:
     """A network object representing a complete graph"""
 
-    def is_adjacent(self, env, env_params, x: NetworkInfo, y: NetworkInfo):
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams) -> InterferenceNetworkState:
+        return InterferenceNetworkState()
+
+    def is_adjacent(self, env, env_params, network_state: InterferenceNetworkState, x: NetworkInfo, y: NetworkInfo):
         return True
 
-    def get_network_info(self, env, env_params, obs: Array) -> NetworkInfo:
+    def get_network_info(self, env, env_params, network_state: InterferenceNetworkState, obs: Array) -> NetworkInfo:
         # Just a dummy object
         return jnp.zeros(1)
+
+    def update(self, state: InterferenceNetworkState, obs: Observation) -> InterferenceNetworkState:
+        return state
 
 
 # Rideshare-specific inteference networks
@@ -125,9 +137,15 @@ class RideshareNetwork(InterferenceNetwork):
 
     lookahead_steps: int = 600
     max_spatial_distance: int = 2  # km
+    
+    def reset(self, rng: PRNGKey, env, env_params: EnvParams) -> InterferenceNetworkState:
+        return InterferenceNetworkState()
+
+    def update(self, state: InterferenceNetworkState, obs: Observation) -> InterferenceNetworkState:
+        return state
 
     def get_network_info(
-        self, env: Environment, env_params: EnvParams, obs: Array
+        self, env: Environment, env_params: EnvParams, network_state: InterferenceNetworkState, obs: Array
     ) -> RideshareNetworkInfo:
         """Extract cluster info (lat, lng, t) from observation."""
         event, _, _ = obs_to_state(env_params.env_params.n_cars, obs)
@@ -137,6 +155,7 @@ class RideshareNetwork(InterferenceNetwork):
         self,
         env: Environment,
         env_params: EnvParams,
+        network_state: InterferenceNetworkState,
         x: RideshareNetworkInfo,
         y: RideshareNetworkInfo,
     ):
@@ -164,6 +183,7 @@ class LimitedMemoryNetworkEstimatorState(EstimatorState):
     design_cluster_treatment_probs: Float[Array, "n_design_cluster_ids"]
     design_cluster_ids: Integer[Array, "window_size"]
     network_infos: NetworkInfo
+    network_state: InterferenceNetworkState
     estimate: Float[Array, ""]
 
 
@@ -185,10 +205,10 @@ class LimitedMemoryNetworkEstimator(Estimator):
     window_size: int
 
     def reset(self, rng, env, env_params):
-        """Initialize DN v2 estimator with network state."""
         dummy_obs, _ = env.reset(jax.random.PRNGKey(0), env_params)
+        network_state = self.network.reset(rng, env, env_params)
         network_infos = jax.vmap(
-            lambda _: self.network.get_network_info(env, env_params, dummy_obs)
+            lambda _: self.network.get_network_info(env, env_params, network_state, dummy_obs)
         )(
             jnp.zeros((self.window_size,))  # Dummy initialization
         )
@@ -204,6 +224,7 @@ class LimitedMemoryNetworkEstimator(Estimator):
             * 0.5,
             design_cluster_ids=jnp.zeros((self.window_size,), dtype=jnp.int32),
             network_infos=network_infos,
+            network_state=network_state,
             estimate=jnp.array(0.0, dtype=jnp.float32),
         )
 
@@ -214,9 +235,6 @@ class LimitedMemoryNetworkEstimator(Estimator):
         state: LimitedMemoryNetworkEstimatorState,
         obs: Observation,
     ):
-        """
-        Update DN v2 estimator using network interference structure.
-        """
         # Extract observation info
         cluster_id = obs.design_info.cluster_id
         p = obs.design_info.p
@@ -224,7 +242,7 @@ class LimitedMemoryNetworkEstimator(Estimator):
         reward = obs.reward
         z = treatment
         new_network_info = self.network.get_network_info(
-            env, env_params, obs.obs
+            env, env_params, state.network_state, obs.obs
         )
 
         # Replace info stored in the window with info from the current step
@@ -243,6 +261,9 @@ class LimitedMemoryNetworkEstimator(Estimator):
             state.network_infos,
             new_network_info,
         )
+        
+        # Update network state
+        updated_network_state = self.network.update(state.network_state, obs)
 
         return LimitedMemoryNetworkEstimatorState(
             t=state.t + 1,
@@ -250,6 +271,7 @@ class LimitedMemoryNetworkEstimator(Estimator):
             design_cluster_treatment_probs=design_cluster_treatment_probs,
             design_cluster_ids=design_cluster_ids,
             network_infos=network_infos,
+            network_state=updated_network_state,
             estimate=state.estimate,
         )
 
@@ -271,14 +293,14 @@ class LimitedMemoryNetworkEstimator(Estimator):
         """
         cluster_id = obs.design_info.cluster_id
         new_network_info = self.network.get_network_info(
-            env, env_params, obs.obs
+            env, env_params, state.network_state, obs.obs
         )
 
         # Determine which other elements of the window represent
         # interfering observations
         is_adjacent = jax.vmap(
-            self.network.is_adjacent, in_axes=(None, None, 0, None)
-        )(env, env_params, state.network_infos, new_network_info)
+            self.network.is_adjacent, in_axes=(None, None, None, 0, None)
+        )(env, env_params, state.network_state, state.network_infos, new_network_info)
         # Ensures that dummy entries (during first window) are ignored
         not_dummy = jnp.arange(self.window_size) <= state.t
         is_different_cluster = state.design_cluster_ids != cluster_id
