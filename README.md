@@ -1,8 +1,7 @@
 ## Overview
 
-XP Gym provides a modular framework for conducting experiments that compare two policies (A and B) in various environments while tracking the performance of different causal inference estimators. The framework is built on JAX for high-performance computing and supports various experimental designs and estimation methods.
+XP Gym provides a modular, highly performant framework for conducting experiments that compare two policies (A and B) in various environments while tracking the performance of different treatment effect estimators. The framework is built on JAX, runs fast on GPUs, and supports various experimental designs and estimation methods.
 
-## Running Experiments
 
 ## Installation
 
@@ -17,6 +16,7 @@ poetry run pip install jax[cuda12]
 eval $(poetry env activate)
 ```
 
+## Running Experiments
 ### Using scripts/run.py
 
 The main entry point for running experiments is `scripts/run.py`, which uses [Hydra](https://hydra.cc) for configuration management:
@@ -81,8 +81,9 @@ The script also prints summary statistics including:
 ## Available Environments
 
 - **ABTestEnv**: Simple A/B testing environment, with no interference
-- **LimitedMemoryEnv**: Simple interference environment where the mean outcome at t depends arbitrarily on $z_{t - window_size} ... z_t$.
+- **LimitedMemoryEnv**: Simple interference environment where the mean outcome at t depends arbitrarily on $z_{t - {\rm window size}} ... z_t$.
 - **XPRidesharePricingEnv**: Rideshare pricing experiment using or-gymnax
+
 
 
 ## Extending the Framework
@@ -93,6 +94,8 @@ The script also prints summary statistics including:
 2. Implement `reset()`, `update()`, and `estimate()` methods
 3. Add to configuration file
 
+We also provide some abstractions for estimators that require a known interference graph; see e.g., `network.py` and`LimitedMemoryHTEstimator`for examples.
+
 ### Adding New Designs
 
 1. Inherit from `Design` and optionally `DesignState`
@@ -100,6 +103,8 @@ The script also prints summary statistics including:
 3. Override `reset()` and `update()` if needed
 
 ### Adding New Environments
+
+Easiest method is to use the `XPEnvironment` wrapper:
 
 1. Inherit from `XPEnvironment`
 2. Define policies A and B in the constructor
