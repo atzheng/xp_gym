@@ -13,13 +13,14 @@ class NaiveEstimatorState(EstimatorState):
 @struct.dataclass
 class NaiveEstimator(Estimator):
     """
-    Naive estimator that computes the average outcome for treated and control groups.
+    Naive IPW estimator that computes the average outcome for treated and control groups,
+    ignoring interference
     """
 
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         return NaiveEstimatorState(0.0, 0)
 
-    def update(self, state: NaiveEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: NaiveEstimatorState, obs: Observation):
         return NaiveEstimatorState(
             state.estimate
             + obs.reward * obs.action / obs.design_info.p
@@ -27,5 +28,5 @@ class NaiveEstimator(Estimator):
             state.count + 1,
         )
 
-    def estimate(self, state: NaiveEstimatorState):
+    def estimate(self, env, env_params, state: NaiveEstimatorState):
         return state.estimate / state.count

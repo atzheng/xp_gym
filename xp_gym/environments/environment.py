@@ -56,8 +56,8 @@ class XPEnvironment(environment.Environment):
         action_A = self.policy_A.apply(
             env_params, dict(), obs, policy_key, **params.policy_A_kwargs
         )
-        action, action_info = jax.lax.cond(
-            action, lambda: action_B, lambda: action_A
+        action, action_info = jax.tree.map(
+            lambda x, y: jax.lax.select(action, x, y), action_B, action_A
         )
         next_obs, next_state, reward, done, info = self.env.step(
             step_key, state, action, env_params

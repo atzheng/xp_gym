@@ -4,24 +4,13 @@ from or_gymnax.rideshare import (
     ManhattanRidesharePricing,
     SimplePricingPolicy,
 )
-from sacred import Experiment
 import pandas as pd
 from tqdm import tqdm
+import os
 
-ex = Experiment("compute-ate")
-
-
-@ex.config
-def config():
-    n_cars = 300  # Number of cars
-    # Pricing choice model parameters
-    w_price = -0.3
-    w_eta = -0.005
-    w_intercept = 4
-    n_events = 500000  # Number of events to simulate per trial
-    batch_size = 100  # Number of environments to run in parallel
-    k = 100  # Total number of trials
-    output = "ate.csv"
+import hydra
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
 
 
 def stepper(env, env_params, policy, carry, key):
@@ -57,17 +46,32 @@ def run_batch(env, env_params, A, B, key, n_steps, batch_size):
     }
 
 
-@ex.automain
-def main(
-    n_cars, w_price, w_eta, w_intercept, n_events, k, output, seed, batch_size
-):
+@hydra.main(version_base=None, config_path="config", config_name="config")
+def main(cfg: DictConfig) -> None:
+    print(OmegaConf.to_yaml(cfg, resolve=True))
+    
+    # Extract ATE configuration
+    seed = cfg.run.seed
+    n_cars = cfg.env.n_cars
+    n_events = cfg.ate.n_steps
+    k = cfg.ate.k
+    batch_size = cfg.ate.batch_size
+    output = cfg.ate.output_path
+    
+    # Get environment parameters from config
+    w_price = cfg.env_params.env_params.w_price
+    w_eta = cfg.env_params.env_params.w_eta
+    w_intercept = cfg.env_params.env_params.w_intercept
+    price_per_distance_A = cfg.env.price_per_distance_A
+    price_per_distance_B = cfg.env.price_per_distance_B
+    
     env = ManhattanRidesharePricing(n_cars=n_cars, n_events=n_events)
     env_params = env.default_params
     env_params = env_params.replace(
         w_price=w_price, w_eta=w_eta, w_intercept=w_intercept
     )
-    A = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=0.01)
-    B = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=0.02)
+    A = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=price_per_distance_A)
+    B = SimplePricingPolicy(n_cars=env.n_cars, price_per_distance=price_per_distance_B)
 
     n_batches = k // batch_size
     jax.debug.print(f"n_batches: {n_batches}")
@@ -77,6 +81,9 @@ def main(
         for key in tqdm(keys)
     ]
 
+    # Check if output directory exists and create if not
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    
     # Convert list of dicts into a DataFrame
     results_df = pd.concat(map(pd.DataFrame, results))
     results_df.to_csv(output, index=False)
@@ -86,3 +93,7 @@ def main(
     mean_B = results_df["B"].mean()
     ate = mean_B - mean_A
     print(f"Average ATE (B - A): {ate:.6f}")
+
+
+if __name__ == "__main__":
+    main()

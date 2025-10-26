@@ -62,7 +62,7 @@ class SwitchbackTPGEstimator(Estimator):
     k: int  # Truncation horizon in clusters
     switch_every: int = 5000  # Time period duration (optional, for reference)
 
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         # Handle k=0 case by using minimum size of 1 for arrays
         buffer_size = max(self.k, 1)
         return SwitchbackTPGEstimatorState(
@@ -82,7 +82,7 @@ class SwitchbackTPGEstimator(Estimator):
             total_observations=0
         )
 
-    def update(self, state: SwitchbackTPGEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: SwitchbackTPGEstimatorState, obs: Observation):
         """
         Update with cluster-level truncated policy gradient logic.
 
@@ -269,7 +269,7 @@ class SwitchbackTPGEstimator(Estimator):
             accumulate_in_current_cluster
         )
 
-    def estimate(self, state: SwitchbackTPGEstimatorState):
+    def estimate(self, env, env_params, state: SwitchbackTPGEstimatorState):
         """
         Compute final ATE estimate using policy gradient.
 

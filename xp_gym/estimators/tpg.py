@@ -38,7 +38,7 @@ class TPGEstimator(Estimator):
     """
     k: int  # Truncation horizon
     
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params):
         # Handle k=0 case by using minimum size of 1 for arrays
         buffer_size = max(self.k, 1)
         return TPGEstimatorState(
@@ -50,7 +50,7 @@ class TPGEstimator(Estimator):
             total_observations=0
         )
     
-    def update(self, state: TPGEstimatorState, obs: Observation):
+    def update(self, env, env_params, state: TPGEstimatorState, obs: Observation):
         """
         Update with proper truncated DQ logic using JAX-safe operations.
         Special case: when k=0, behave exactly like naive estimator.
@@ -137,7 +137,7 @@ class TPGEstimator(Estimator):
             total_observations=state.total_observations + 1
         )
     
-    def estimate(self, state: TPGEstimatorState):
+    def estimate(self, env, env_params, state: TPGEstimatorState):
         """
         Compute final estimate combining complete and incomplete observations.
         Special case: when k=0, only use complete estimates (like naive estimator).

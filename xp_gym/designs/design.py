@@ -10,8 +10,12 @@ from numpy import searchsorted
 import pandas as pd
 import numpy as np
 from haversine import haversine
+from jaxtyping import Integer
+from jax import Array
 
 from xp_gym.observation import Observation
+from importlib import resources as impresources
+from .. import data
 
 
 @struct.dataclass
@@ -20,6 +24,7 @@ class DesignInfo:
     Information about the design at a given time step, which is ultimately
     wrapped into the Observation and passed to the Estimator.
     """
+
     p: float  # Probability of treatment assignment
 
 
@@ -28,6 +33,7 @@ class DesignState:
     """
     Dynamic state of the experimental design. Stores nothing by default.
     """
+
     pass
 
 
@@ -36,6 +42,7 @@ class Design:
     """
     Design class that holds the parameters of the experimental design.
     """
+
     def reset(self, rng: PRNGKey, env_params: EnvParams) -> DesignState:
         return DesignState()
 
@@ -65,6 +72,7 @@ class ClusterRandomizedDesign(Design):
     """
     Base class for designs that assign clusters based on a treatment.
     """
+
     p: float
 
     def reset(self, rng: PRNGKey, env_params: EnvParams) -> ClusterDesignState:
@@ -77,7 +85,9 @@ class ClusterRandomizedDesign(Design):
         """
         raise NotImplementedError()
 
-    def assign_treatment(self, design_state: ClusterDesignState, env_state: EnvState):
+    def assign_treatment(
+        self, design_state: ClusterDesignState, env_state: EnvState
+    ):
         cluster_id = self.get_cluster_id(design_state, env_state)
         new_rng = jax.random.fold_in(design_state.rng, cluster_id)
         z = jax.random.bernoulli(new_rng, self.p)
@@ -86,333 +96,147 @@ class ClusterRandomizedDesign(Design):
             ClusterDesignInfo(p=self.p, cluster_id=cluster_id),
         )
 
+
+@struct.dataclass
+class UnitRandomizedDesignState(ClusterDesignState):
+    t: int
+
+
 @struct.dataclass
 class UnitRandomizedDesign(ClusterRandomizedDesign):
+    def reset(self, rng: PRNGKey, env_params: EnvParams) -> ClusterDesignState:
+        return UnitRandomizedDesignState(t=0, rng=rng)
+
     def get_cluster_id(self, _, env_state) -> bool:
         # Unique cluster at every time step
         return env_state.time
 
-
-### Event counts based switchback design ###
-# @struct.dataclass
-# class SwitchbackDesign(ClusterRandomizedDesign):
-#     time_attr: str = "time"
-#     frequency: float = 1.0
-
-#     def get_cluster_id(self, design_state: ClusterDesignState, env_state: EnvState) -> int:
-#         """
-#         Returns the cluster ID based on the time attribute.
-#         This design uses the time step as the cluster ID.
-#         """
-#         t = op.attrgetter(self.time_attr)(env_state)
-#         return jnp.floor(t / self.frequency).astype(jnp.int32)
-
-
-@struct.dataclass
-class SwitchbackDesignInfo(ClusterDesignInfo):
-    """Design info for SwitchbackDesign that includes current time."""
-    current_time: float = 0.0  # Current event time for state updates
-
-
-@struct.dataclass
-class SwitchbackDesignState(ClusterDesignState):
-    """Simplified state for ascending time-ordered events (time-only)."""
-    current_time_index: int  # Current sequential time period index
-    last_time_interval: int  # Last seen time interval boundary
+    def update(
+        self, state: UnitRandomizedDesignState, obs: Observation
+    ) -> UnitRandomizedDesignState:
+        return UnitRandomizedDesignState(t=state.t + 1, rng=state.rng)
 
 
 @struct.dataclass
 class SwitchbackDesign(ClusterRandomizedDesign):
-    """
-    Efficient time-based switchback design leveraging ascending time order.
+    time_attr: str = "event.t"
+    switch_every: float = 1.0
 
-    Similar to RefinedSpatioClusterDesign but without spatial clustering.
-    Uses real event time instead of discrete time steps.
-
-    Key features:
-    1. No dynamic arrays or searching - just track current time index
-    2. Simple increment when time period changes
-    3. O(1) complexity for all operations
-    4. Fully JAX-compatible
-    """
-    switch_every: int = 5000  # Time period duration in real time units
-
-    def reset(self, rng: PRNGKey, env_params: EnvParams) -> SwitchbackDesignState:
-        """Simple reset with minimal state."""
-        return SwitchbackDesignState(
-            rng=rng,
-            current_time_index=-1,  # Start with -1, will increment to 0 on first use
-            last_time_interval=-1  # No time interval seen yet
-        )
-
-    def get_cluster_id(self, design_state: SwitchbackDesignState, env_state: EnvState) -> int:
+    def get_cluster_id(
+        self, design_state: ClusterDesignState, env_state: EnvState
+    ) -> int:
         """
-        Efficient cluster ID calculation leveraging ascending time order.
-
-        Since time is ascending, we only check if we've moved to a new time period.
-        If so, increment the time index.
+        Returns the cluster ID based on the time attribute.
+        This design uses the time step as the cluster ID.
         """
-        # Get real event time and calculate time interval (end boundary)
-        t = env_state.event.t
-        current_time_interval = (t // self.switch_every + 1) * self.switch_every
-
-        # Check if this is a new time period
-        # Handle the first event (when last_time_interval is -1)
-        is_first_event = design_state.last_time_interval == -1
-        is_new_period = current_time_interval != design_state.last_time_interval
-
-        # Calculate time index - start from 0 for first period
-        # For first event, use 0; for new period, increment; otherwise keep current
-        time_index = jnp.where(
-            is_first_event,
-            0,  # First event gets index 0
-            jnp.where(
-                is_new_period,
-                design_state.current_time_index + 1,  # Increment for new period
-                design_state.current_time_index       # Keep current index
-            )
-        )
-
-        return time_index
-
-    def assign_treatment(self, design_state: SwitchbackDesignState, env_state: EnvState):
-        """Assign treatment with efficient O(1) cluster ID calculation."""
-        # Get cluster ID (which is just the time index)
-        cluster_id = self.get_cluster_id(design_state, env_state)
-
-        # Generate treatment assignment
-        new_rng = jax.random.fold_in(design_state.rng, cluster_id)
-        z = jax.random.bernoulli(new_rng, self.p)
-
-        # Create design info with current time for update() to use
-        design_info = SwitchbackDesignInfo(
-            p=self.p,
-            cluster_id=cluster_id,
-            current_time=env_state.event.t
-        )
-
-        return z, design_info
-
-    def update(self, state: SwitchbackDesignState, obs: Observation) -> SwitchbackDesignState:
-        """
-        Update design state based on the observation.
-        This is called after assign_treatment in the simulation loop.
-        """
-        # Extract current time from the design info in the observation
-        if hasattr(obs.design_info, 'current_time'):
-            current_time = obs.design_info.current_time
-            current_time_interval = (current_time // self.switch_every + 1) * self.switch_every
-
-            # Check if we've moved to a new time period
-            is_new_period = current_time_interval != state.last_time_interval
-
-            # Update state if needed (leveraging ascending time order)
-            new_time_index = jnp.where(
-                is_new_period,
-                state.current_time_index + 1,  # Increment for new period
-                state.current_time_index       # Keep current index
-            )
-
-            new_last_interval = jnp.where(
-                is_new_period,
-                current_time_interval,         # Update to current interval
-                state.last_time_interval      # Keep previous
-            )
-
-            return state.replace(
-                current_time_index=new_time_index,
-                last_time_interval=new_last_interval
-            )
-
-        return state
-
+        t = op.attrgetter(self.time_attr)(env_state)
+        return (t // self.switch_every).astype(jnp.int32)
 
 
 @struct.dataclass
-class SpatioClusterDesignState(ClusterDesignState):
-    """Simplified state for ascending time-ordered events."""
-    current_time_index: int  # Current sequential time period index
-    last_time_interval: int  # Last seen time interval boundary
+class SpatioTemporalClusterDesignInfo(ClusterDesignInfo):
+    """
+     Extended design info that includes spatial mapping information for DN
+    ."""
 
-
-@struct.dataclass
-class SpatioClusterDesignInfo(ClusterDesignInfo):
-    """Extended design info that includes spatial mapping information for DN estimator."""
     time_cluster: int  # Time-based cluster component
     space_cluster: int  # Space-based cluster component
-    n_spatial_zones: int  # Total number of spatial zones
-    zone_distances: jnp.ndarray  # Distance matrix between zones (km)
-    switch_every: int  # Time period duration from design
-    current_time: int  # Current event time for temporal adjacency calculations
-    src_2_zone: jnp.ndarray  # Mapping from src location index to zone_id
-    nodes_zones_available: bool = True  # Whether real spatial mapping is available
-    env_state: EnvState = None  # Environment state for temporal adjacency calculations
+
+
+def load_rideshare_clusters():
+    """
+    Load rideshare spatial clusters.
+    """
+    zones_file = impresources.files(data) / "taxi-zones.parquet"
+    nodes_file = impresources.files(data) / "manhattan-nodes.parquet"
+    zones = pd.read_parquet(zones_file)
+    unq_zones, unq_zone_ids = np.unique(zones["zone"], return_inverse=True)
+    zones["zone_id"] = unq_zone_ids
+    nodes = pd.read_parquet(nodes_file)
+    nodes["lng"] = nodes["lng"].astype(float)
+    nodes["lat"] = nodes["lat"].astype(float)
+    nodes_zones = nodes.merge(zones, on="osmid")
+
+    centroids = nodes_zones.groupby("zone_id").aggregate(
+        {"lat": "mean", "lng": "mean"}
+    )
+    zone_dists = np.zeros((len(centroids), len(centroids)))
+    for i in range(len(centroids)):
+        for j in range(len(centroids)):
+            zone_dists[i, j] = haversine(
+                (centroids.iloc[i]["lat"], centroids.iloc[i]["lng"]),
+                (centroids.iloc[j]["lat"], centroids.iloc[j]["lng"]),
+            )
+
+    # Convert to jax array
+    max_src_idx = nodes_zones.index.max()
+    src_to_zone = np.full(max_src_idx + 1, -1, dtype=np.int32)
+    for idx, row in nodes_zones.iterrows():
+        src_to_zone[idx] = row["zone_id"]
+
+    return jnp.array(src_to_zone), jnp.array(zone_dists)
 
 
 @struct.dataclass
-class SpatioClusterDesign(ClusterRandomizedDesign):
+class RideshareClusterDesignState(ClusterDesignState):
     """
-    Efficient spatiotemporal design leveraging ascending time order.
-    
-    Key improvements over SpatiotemporalDesign:
-    1. No dynamic arrays or searching - just track current time index
-    2. Simple increment when time period changes  
-    3. No ad-hoc size limits
-    4. Fully JAX-compatible operations with O(1) complexity
+    State for the spatiotemporal cluster design.
     """
+
+    src_to_zone: Integer[Array, "n_nodes"]
+    n_zones: Integer[Array, ""]
+
+
+@struct.dataclass
+class RideshareClusterDesign(ClusterRandomizedDesign):
+    """
+    Spatiotemporal cluster design, with randomization based on
+    NYC TLC taxi zones x Time.
+    """
+
     switch_every: int = 5000
-    data_path: str = "data"
-    _spatial_mapping: dict = None
 
-    def __post_init__(self):
-        """Load spatial data during initialization."""
-        if self._spatial_mapping is None:
-            try:
-                # Load spatial data exactly like original SpatiotemporalDesign
-                zones = pd.read_parquet(f"{self.data_path}/taxi-zones.parquet")
-                unq_zones, unq_zone_ids = np.unique(zones["zone"], return_inverse=True)
-                zones["zone_id"] = unq_zone_ids
-                nodes = pd.read_parquet(f"{self.data_path}/manhattan-nodes.parquet")
-                nodes["lng"] = nodes["lng"].astype(float)
-                nodes["lat"] = nodes["lat"].astype(float)
-                nodes_zones = nodes.merge(zones, on="osmid")
-                
-                # Compute zone distance matrix
-                centroids = nodes_zones.groupby("zone_id").aggregate(
-                    {"lat": "mean", "lng": "mean"}
-                )
-                n_zones = len(centroids)
-                zone_distances = np.zeros((n_zones, n_zones))
-                
-                for i in range(n_zones):
-                    for j in range(n_zones):
-                        zone_distances[i, j] = haversine(
-                            (centroids.iloc[i]["lat"], centroids.iloc[i]["lng"]),
-                            (centroids.iloc[j]["lat"], centroids.iloc[j]["lng"]),
-                        )
-                
-                # Create JAX-compatible spatial mapping array
-                max_src_idx = nodes_zones.index.max()
-                src_to_zone = np.full(max_src_idx + 1, -1, dtype=np.int32)
-                for idx, row in nodes_zones.iterrows():
-                    src_to_zone[idx] = row["zone_id"]
-                
-                # Store as JAX arrays
-                object.__setattr__(self, '_spatial_mapping', {
-                    'nodes_zones': nodes_zones,
-                    'n_zones': n_zones,
-                    'zone_distances': jnp.asarray(zone_distances),
-                    'src_to_zone': jnp.asarray(src_to_zone)
-                })
-                
-                print(f"RefinedSpatioClusterDesign: Loaded {len(nodes_zones)} nodes, {n_zones} zones")
-                
-            except Exception as e:
-                print(f"Error loading spatial data: {e}")
-                raise
-
-    def reset(self, rng: PRNGKey, env_params: EnvParams) -> SpatioClusterDesignState:
-        """Simple reset with no ad-hoc parameters."""
-        return SpatioClusterDesignState(
+    def reset(
+        self, rng: PRNGKey, env_params: EnvParams
+    ) -> RideshareClusterDesignState:
+        src_to_zone, _ = load_rideshare_clusters()
+        return RideshareClusterDesignState(
             rng=rng,
-            current_time_index=-1,  # Start with -1, will increment to 0 on first use
-            last_time_interval=-1  # No time interval seen yet
+            src_to_zone=src_to_zone,
+            n_zones=src_to_zone.max() + 1,
         )
 
-    def get_cluster_id(self, design_state: SpatioClusterDesignState, env_state: EnvState) -> int:
-        """
-        Efficient cluster ID calculation leveraging ascending time order.
-        
-        Key insight: Since time is ascending, we only need to check if we've 
-        moved to a new time period. If so, increment the time index.
-        """
-        # Calculate current time interval (end boundary) - same as original design
-        t = env_state.event.t
-        current_time_interval = (t // self.switch_every + 1) * self.switch_every
-        
-        # For first call or new time period, we need to increment
-        # This matches the original design's sequential assignment behavior
-        is_new_period = current_time_interval != design_state.last_time_interval
-        
-        # Calculate time index - start from 0 for first period
-        time_index = jnp.where(
-            is_new_period,
-            design_state.current_time_index + 1,  # Increment for new period
-            design_state.current_time_index       # Keep current index
-        )
-        
-        # Get space cluster using JAX array lookup
-        src_location = env_state.event.src
-        space_cluster = self._spatial_mapping['src_to_zone'][src_location]
-        
-        # Combine into cluster ID - same formula as original design
-        n_zones = self._spatial_mapping['n_zones']
-        cluster_id = time_index * n_zones + space_cluster
-        
+    def get_cluster_id(
+        self,
+        design_state: RideshareClusterDesignState,
+        env_state: EnvState,
+    ) -> int:
+        time_id = (
+            env_state.event.t // self.switch_every + 1
+        ) * self.switch_every  # Identifies the end of the period
+        space_id = design_state.src_to_zone[env_state.event.src]
+        cluster_id = time_id * design_state.n_zones + space_id
         return cluster_id
 
-    def assign_treatment(self, design_state: SpatioClusterDesignState, env_state: EnvState):
+    def assign_treatment(
+        self,
+        design_state: RideshareClusterDesignState,
+        env_state: EnvState,
+    ):
         """Assign treatment with efficient O(1) cluster ID calculation."""
-        # Get cluster ID
-        cluster_id = self.get_cluster_id(design_state, env_state)
-        
-        # Generate treatment assignment
-        new_rng = jax.random.fold_in(design_state.rng, cluster_id)
-        z = jax.random.bernoulli(new_rng, self.p)
-        
+        z, base_design_info = super().assign_treatment(design_state, env_state)
+
         # Extract components for design info
-        n_zones = self._spatial_mapping['n_zones']
+        cluster_id = base_design_info.cluster_id
+        n_zones = design_state.n_zones
         time_cluster = cluster_id // n_zones
         space_cluster = cluster_id % n_zones
-        
-        # Get current time for design info
-        current_time = env_state.event.t
-        
-        design_info = SpatioClusterDesignInfo(
+
+        design_info = SpatioTemporalClusterDesignInfo(
             p=self.p,
             cluster_id=cluster_id,
             time_cluster=time_cluster,
             space_cluster=space_cluster,
-            n_spatial_zones=n_zones,
-            zone_distances=self._spatial_mapping['zone_distances'],
-            switch_every=self.switch_every,
-            current_time=current_time,
-            src_2_zone=self._spatial_mapping['src_to_zone'],
-            nodes_zones_available=True,
-            env_state=env_state
         )
-        
-        return z, design_info
 
-    def update(self, state: SpatioClusterDesignState, obs: Observation) -> SpatioClusterDesignState:
-        """
-        Update design state based on the observation.
-        This is called after assign_treatment in the simulation loop.
-        """
-        # Extract current time from the design info in the observation
-        if hasattr(obs.design_info, 'current_time'):
-            current_time = obs.design_info.current_time
-            current_time_interval = (current_time // self.switch_every + 1) * self.switch_every
-            
-            # Check if we've moved to a new time period
-            is_new_period = current_time_interval != state.last_time_interval
-            
-            # Update state if needed (leveraging ascending time order)
-            new_time_index = jnp.where(
-                is_new_period,
-                state.current_time_index + 1,  # Increment for new period
-                state.current_time_index       # Keep current index
-            )
-            
-            new_last_interval = jnp.where(
-                is_new_period,
-                current_time_interval,         # Update to current interval
-                state.last_time_interval      # Keep previous
-            )
-            
-            return state.replace(
-                current_time_index=new_time_index,
-                last_time_interval=new_last_interval
-            )
-        
-        return state
+        return z, design_info
