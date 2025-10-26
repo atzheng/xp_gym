@@ -1,3 +1,4 @@
+# WARNING -- not fully tested
 from flax import struct
 import jax
 import jax.numpy as jnp
