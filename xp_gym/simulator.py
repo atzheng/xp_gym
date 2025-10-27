@@ -100,7 +100,7 @@ def simulate(
     n_estimates = T // estimate_every_n_steps
     rngs = jax.random.split(rng, n_estimates)
 
-    @scan_tqdm(n_estimates, print_rate=10)
+    @scan_tqdm(n_estimates, print_rate=min(10, n_estimates - 1))
     def scanner(carry, idx_and_rng):
         idx, rng = idx_and_rng
         return step_n_and_estimate(
