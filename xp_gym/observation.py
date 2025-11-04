@@ -9,4 +9,5 @@ class Observation(object):
     obs: Float[Array, "o_dim"]
     action: Bool[Array, "1"]
     reward: Float[Array, "1"]
+    info: Any
     design_info: Any

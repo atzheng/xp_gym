@@ -17,10 +17,10 @@ class NaiveEstimator(Estimator):
     ignoring interference
     """
 
-    def reset(self, rng, env, env_params):
+    def reset(self, rng, env, env_params, design):
         return NaiveEstimatorState(0.0, 0)
 
-    def update(self, env, env_params, state: NaiveEstimatorState, obs: Observation):
+    def update(self, env, env_params, design, state: NaiveEstimatorState, obs: Observation):
         return NaiveEstimatorState(
             state.estimate
             + obs.reward * obs.action / obs.design_info.p
@@ -28,5 +28,5 @@ class NaiveEstimator(Estimator):
             state.count + 1,
         )
 
-    def estimate(self, env, env_params, state: NaiveEstimatorState):
+    def estimate(self, env, env_params, design, state: NaiveEstimatorState):
         return state.estimate / state.count

@@ -42,6 +42,7 @@ estimators:
       max_spatial_distance: 2
       lookahead_steps: 600
     window_size: 2000
+    baseline: 2
   dn:
     _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
     network: 
