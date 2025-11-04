@@ -86,7 +86,7 @@ class AvgRewardLSTDDQEstimator(Estimator):
     discount_factor: float = 1.0
     reg_param: float = 1e-3
 
-    def reset(self, rng, env_params):
+    def reset(self, rng, env, env_params, design):
         # Get state dimension from environment parameters
         # Now using available cars per zone instead of raw car locations
         # The state dimension is n_spatial_zones (number of zones, typically 63)
@@ -115,6 +115,7 @@ class AvgRewardLSTDDQEstimator(Estimator):
         self,
         env,
         env_params,
+        design,
         state: AvgRewardLSTDDQEstimatorState,
         obs: Observation,
     ):
@@ -248,7 +249,7 @@ class AvgRewardLSTDDQEstimator(Estimator):
             reg_param=state.reg_param,
         )
 
-    def estimate(self, env, env_params, state: AvgRewardLSTDDQEstimatorState):
+    def estimate(self, env, env_params, design, state: AvgRewardLSTDDQEstimatorState):
         """
         Compute Dq estimate using accumulated LSTD data.
 

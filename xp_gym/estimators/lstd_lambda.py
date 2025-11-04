@@ -83,7 +83,7 @@ class LSTDLambdaEstimator(Estimator):
     alpha: float = 1.0  # Regularization parameter
     lambda_: float = 0.0  # Eligibility trace decay parameter
     
-    def reset(self, rng, env, env_params):
+    def reset(self, rng, env, env_params, design):
         # Get state dimension from environment parameters
         # Now using available cars per zone instead of raw car locations
         # The state dimension is n_spatial_zones (fixed at 63 zones)
@@ -104,7 +104,7 @@ class LSTDLambdaEstimator(Estimator):
             lambda_param=self.lambda_,
         )
 
-    def update(self, env, env_params, state: LSTDLambdaEstimatorState, obs: Observation):
+    def update(self, env, env_params, design, state: LSTDLambdaEstimatorState, obs: Observation):
         """
         Update LSTD-λ estimator with new observation.
         
@@ -198,7 +198,7 @@ class LSTDLambdaEstimator(Estimator):
             lambda_param=state.lambda_param,
         )
 
-    def estimate(self, env, env_params, state: LSTDLambdaEstimatorState):
+    def estimate(self, env, env_params, design, state: LSTDLambdaEstimatorState):
         """
         Compute LSTD-λ treatment effect estimate.
         

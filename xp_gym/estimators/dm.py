@@ -19,10 +19,10 @@ class DMEstimator(Estimator):
     """
     Simple difference in means estimator, without IPW.
     """
-    def reset(self, rng, env, env_params):
+    def reset(self, rng, env, env_params, design):
         return DMEstimatorState(0.0, 0, 0.0, 0)
 
-    def update(self, env, env_params, state: DMEstimatorState, obs: Observation):
+    def update(self, env, env_params, design, state: DMEstimatorState, obs: Observation):
         # Accumulate rewards by treatment group (like original naive_update)
         treated_sum = jnp.where(
             obs.action,
@@ -49,7 +49,7 @@ class DMEstimator(Estimator):
             treated_sum, treated_count, control_sum, control_count
         )
 
-    def estimate(self, env, env_params, state: DMEstimatorState):
+    def estimate(self, env, env_params, design, state: DMEstimatorState):
         # Avoid division by zero
         treated_avg = jnp.where(
             state.treated_count > 0,

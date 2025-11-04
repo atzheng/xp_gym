@@ -13,6 +13,7 @@ from gymnax.environments.environment import EnvState, Environment, EnvParams
 from jax_tqdm import scan_tqdm
 
 
+
 def step(
     estimators: Dict[str, Estimator],
     design: Design,
@@ -26,16 +27,17 @@ def step(
     """
     obs, state, est_states, design_state = carry
     action, design_info = design.assign_treatment(design_state, state)
-    new_obs, new_state, reward, _, _ = env.step(rng, state, action, env_params)
+    new_obs, new_state, reward, _, info = env.step(rng, state, action, env_params)
     new_xp_obs = Observation(
         obs=new_obs,
         action=action,
         reward=reward,
+        info=info,
         design_info=design_info,
     )
     new_est_states = {
         est_name: estimator.update(
-            env, env_params, est_states[est_name], new_xp_obs
+            env, env_params, design, est_states[est_name], new_xp_obs
         )
         for est_name, estimator in estimators.items()
     }
@@ -62,10 +64,30 @@ def step_n_and_estimate(
     )
     est_states = carry[2]
     estimates = {
-        est_name: estimator.estimate(env, env_params, est_states[est_name])
+        est_name: estimator.estimate(env, env_params, design, est_states[est_name])
         for est_name, estimator in estimators.items()
     }
     return carry, estimates
+
+
+def init_carry(
+    estimators: Dict[str, Estimator],
+    design: Design,
+    env: Environment,
+    env_params: EnvParams,
+    rng: Any,
+):
+    """
+    Initialize the carry for the simulation.
+    """
+    rng, reset_rng = jax.random.split(rng)
+    obs, state = env.reset(reset_rng, env_params)
+    init_est_states = {
+        est_name: estimator.reset(rng, env, env_params, design)
+        for est_name, estimator in estimators.items()
+    }
+    init_design_state = design.reset(rng, env_params)
+    return (obs, state, init_est_states, init_design_state)
 
 
 def simulate(
@@ -80,21 +102,6 @@ def simulate(
     """
     Simulate an environment with given estimators and design for T steps.
     """
-    rng, reset_rng = jax.random.split(rng)
-    rng, estimator_rng = jax.random.split(rng)
-    rng, design_rng = jax.random.split(rng)
-    obs, state = env.reset(reset_rng, env_params)
-    init_est_states = {
-        est_name: estimator.reset(estimator_rng, env, env_params)
-        for est_name, estimator in estimators.items()
-    }
-    init_carry = (
-        obs,
-        state,
-        init_est_states,
-        design.reset(design_rng, env_params),
-    )
-
     T = T or env_params.max_steps_in_episode
     estimate_every_n_steps = estimate_every_n_steps or T
     n_estimates = T // estimate_every_n_steps
@@ -114,6 +121,8 @@ def simulate(
         )
 
     carry, results = jax.lax.scan(
-        scanner, init_carry, (jnp.arange(n_estimates), rngs)
+        scanner,
+        init_carry(estimators, design, env, env_params, rng),
+        (jnp.arange(n_estimates), rngs),
     )
     return carry, results
