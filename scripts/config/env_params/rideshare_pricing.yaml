@@ -1,0 +1,4 @@
+env_params:
+  w_price: -0.3
+  w_eta: -0.005
+  w_intercept: 4
