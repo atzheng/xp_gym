@@ -2049,7 +2049,7 @@ pooch = "^1.8.2"
 type = "git"
 url = "https://github.com/atzheng/or-gymnax.git"
 reference = "pool"
-resolved_reference = "14edcb8b19b9e90a182e433f66cfed8c370d7d86"
+resolved_reference = "ce8a38b48aa96385b1264ef709494c9abdfc0a9b"
 
 [[package]]
 name = "orbax-checkpoint"
