@@ -37,7 +37,7 @@ class XPEnvironment(environment.Environment):
         self,
         key: chex.PRNGKey,
         state: environment.EnvState,
-        action: int,
+        treatment: int,
         params: XPEnvParams,
     ) -> Tuple[
         chex.Array,
@@ -50,17 +50,23 @@ class XPEnvironment(environment.Environment):
         key, step_key = jax.random.split(key, 2)
         env_params = params.env_params
         obs = self.env.get_obs(state, env_params)
-        action_B = self.policy_B.apply(
-            env_params, dict(), obs, policy_key, **params.policy_B_kwargs
-        )
-        action_A = self.policy_A.apply(
+        action_A, info_A = self.policy_A.apply(
             env_params, dict(), obs, policy_key, **params.policy_A_kwargs
         )
-        action, action_info = jax.tree.map(
-            lambda x, y: jax.lax.select(action, x, y), action_B, action_A
+        action_B, info_B = self.policy_B.apply(
+            env_params, dict(), obs, policy_key, **params.policy_B_kwargs
         )
+        # Compose [canonical, counterfactual] action pair for the inner env.
+        # If treatment=1 → B is canonical, A is counterfactual; vice versa.
+        # Policies may return scalar or array actions; handle both.
+        action_A_best = action_A[0] if action_A.ndim > 0 else action_A
+        action_B_best = action_B[0] if action_B.ndim > 0 else action_B
+        canonical = jax.lax.select(treatment, action_B_best, action_A_best)
+        counterfactual = jax.lax.select(treatment, action_A_best, action_B_best)
+        inner_action = jnp.array([canonical, counterfactual])
+
         next_obs, next_state, reward, done, info = self.env.step(
-            step_key, state, action, env_params
+            step_key, state, inner_action, env_params
         )
 
         return (

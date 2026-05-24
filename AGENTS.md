@@ -1,4 +1,32 @@
-# Agent Instructions
+# Project overview
+
+## Project goals
+
+This project contains code to execute a series of numerical experiments, to evaluate estimators for experimentation under interference 
+
+### Estimators
+
+The estimators in question are the "Differences-in-Qs" estimators specified in the following series of work:
+
+- Markovian Interference in Experiments
+ https://arxiv.org/abs/2206.02371
+
+- Differences-in-Neighbors for Network Interference in Experiments
+ https://arxiv.org/abs/2503.02271
+
+### Simulation
+
+We are primarily running experiments on a simulation of UberPool,  where requests are experimental units, randomized into two dispatch algorithms A and B, and interference comes from the fact that dispatch decisions made for any one request affect outcomes for every subsequent request.
+
+Simulations are contained in the `or_gymnax` package; we are using the `pool` branch
+
+## Architecture
+
+- The entrypoint for running experiments is `scripts/run.py`. This uses `hydra` for configuation, with the default configuration for the current experiments located at `scripts/config/dq_expts.py`
+- To run experiments effectively we will need to run them on a remote gpu server. Jobs can be submitted to a server by writing a config file (see e.g., `vast/dq.yaml`) which mirrors skypilot's syntax, and submitting it using `vastlaunch launch <my-yaml-file>`. 
+- Before submitting anything to a remote server, you must first make sure it runs locally by writing a test version with a small instance size / small number of steps, and submitting it to a local directory using `vastlaunch launch --local <my-testing-yaml>`
+
+# Issue tracking using Beads (bd) 
 
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 

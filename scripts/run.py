@@ -1,4 +1,3 @@
-import os
 import jax
 import jax.numpy as jnp
 import pandas as pd
@@ -8,6 +7,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from xp_gym.simulator import simulate
+from xp_gym.io import to_csv
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
@@ -32,39 +32,43 @@ def run(cfg: DictConfig) -> None:
     design = instantiate(cfg.design)
     estimators = {k: instantiate(v) for k, v in cfg.estimators.items()}
     rng = jax.random.PRNGKey(seed)
-    rngs = jax.random.split(rng, cfg.run.n_envs)
+    trial_rngs = jax.random.split(rng, cfg.run.num_trials)
     vmap_simulate = jax.vmap(simulate, in_axes=(None, None, None, None, 0, None, None))
-
-    _, results = vmap_simulate(
-        estimators,
-        design,
-        env,
-        env_params,
-        rngs,
-        cfg.run.n_steps,
-        cfg.run.estimate_every_n_steps,
-    )
-
     n_estimates = cfg.run.n_steps // cfg.run.estimate_every_n_steps
 
-    results["env_id"] = jnp.tile(
-        jnp.expand_dims(jnp.arange(cfg.run.n_envs), 1), (1, n_estimates)
-    )
+    trial_dfs = []
+    for trial_idx in range(cfg.run.num_trials):
+        rngs = jax.random.split(trial_rngs[trial_idx], cfg.run.n_envs)
 
-    results["steps"] = jnp.tile(
-        jnp.expand_dims(
-            jnp.arange(n_estimates) * cfg.run.estimate_every_n_steps, 0
-        ),
-        (cfg.run.n_envs, 1),
-    )
+        _, results = vmap_simulate(
+            estimators,
+            design,
+            env,
+            env_params,
+            rngs,
+            cfg.run.n_steps,
+            cfg.run.estimate_every_n_steps,
+        )
 
-    results_df = pd.DataFrame.from_dict(
-        jax.tree_util.tree_map(lambda x: x.reshape(-1), results)
-    )
+        results["env_id"] = jnp.tile(
+            jnp.expand_dims(jnp.arange(cfg.run.n_envs), 1), (1, n_estimates)
+        )
 
-    # Check if basedir exists and create if not
-    os.makedirs(os.path.dirname(cfg.run.output_path), exist_ok=True)
-    results_df.to_csv(cfg.run.output_path, index=False)
+        results["steps"] = jnp.tile(
+            jnp.expand_dims(
+                jnp.arange(n_estimates) * cfg.run.estimate_every_n_steps, 0
+            ),
+            (cfg.run.n_envs, 1),
+        )
+
+        trial_df = pd.DataFrame.from_dict(
+            jax.tree_util.tree_map(lambda x: x.reshape(-1), results)
+        )
+        trial_df["trial"] = trial_idx
+        trial_dfs.append(trial_df)
+
+    results_df = pd.concat(trial_dfs, ignore_index=True)
+    to_csv(results_df, cfg.run.output_path)
 
 
 if __name__ == "__main__":

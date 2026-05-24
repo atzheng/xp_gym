@@ -9,6 +9,7 @@ run:
   n_steps: 500000
   estimate_every_n_steps: 1000
   seed: 42
+  num_trials: 1
 
 # Configuration for ATE computation, used by compute-ate.py
 ate:
@@ -25,29 +26,28 @@ design:
 estimators:
   naive:
     _target_: xp_gym.estimators.naive.NaiveEstimator
-  # dm:
-  #   _target_: xp_gym.estimators.dm.DMEstimator
-  # ht:
-  #   _target_: xp_gym.estimators.ht.LimitedMemoryHTEstimator
-  #   network:
-  #     _target_: xp_gym.estimators.network.RideshareNetwork
-  #     max_spatial_distance: 2
-  #     lookahead_steps: 600
-  #   window_size: 2000
-  #   baseline: 2
-  # dn:
-  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-  #   network:
-  #     _target_: xp_gym.estimators.network.RideshareNetwork
-  #     max_spatial_distance: 2
-  #     lookahead_steps: 600
-  #   window_size: 2000
-  #   baseline: 2
-  # t
-  pg:
+  dm:
+    _target_: xp_gym.estimators.dm.DMEstimator
+  ht:
+    _target_: xp_gym.estimators.ht.LimitedMemoryHTEstimator
+    network:
+      _target_: xp_gym.estimators.network.RideshareNetwork
+      max_spatial_distance: 2
+      lookahead_steps: 600
+    window_size: 2000
+    baseline: 2
+  dn:
+    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+    network:
+      _target_: xp_gym.estimators.network.RideshareNetwork
+      max_spatial_distance: 2
+      lookahead_steps: 600
+    window_size: 2000
+    baseline: 2
+  tpg:
     _target_: xp_gym.estimators.tpg.TPGEstimator
     k: 1
-  # sw_tpg:
-  #   _target_: xp_gym.estimators.sw_tpg.SwitchbackTPGEstimator
-  #   k: 1
-  #   switch_every: ${design.switch_every}
+  sw_tpg:
+    _target_: xp_gym.estimators.sw_tpg.SwitchbackTPGEstimator
+    k: 1
+    switch_every: ${design.switch_every}

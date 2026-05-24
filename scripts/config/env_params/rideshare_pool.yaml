@@ -1,2 +1,2 @@
-# Pool dispatch env has no inner env_params
-max_active_trips: 3
+env_params:
+  max_active_trips: 3

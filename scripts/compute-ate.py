@@ -2,11 +2,12 @@ import jax
 from functools import partial
 import pandas as pd
 from tqdm import tqdm
-import os
 
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+
+from xp_gym.io import to_csv
 
 
 def stepper(env, env_params, policy, carry, key):
@@ -55,13 +56,7 @@ def main(cfg: DictConfig) -> None:
     xp_env = instantiate(cfg.env)
     env = xp_env.env
     env_params_dict = dict(cfg.env_params)
-
-    if "env_params" in env_params_dict:
-        # Pricing-style: inner params (w_price, w_eta, etc.) update the env directly
-        env_params = env.default_params.replace(**env_params_dict["env_params"])
-    else:
-        # Pool-style: top-level keys (e.g. max_active_trips) update the env directly
-        env_params = env.default_params.replace(**env_params_dict)
+    env_params = env.default_params.replace(**env_params_dict["env_params"])
 
     A = xp_env.policy_A
     B = xp_env.policy_B
@@ -74,10 +69,8 @@ def main(cfg: DictConfig) -> None:
         for key in tqdm(keys)
     ]
 
-    os.makedirs(os.path.dirname(output), exist_ok=True)
-
     results_df = pd.concat(map(pd.DataFrame, results))
-    results_df.to_csv(output, index=False)
+    to_csv(results_df, output)
 
     mean_A = results_df["A"].mean()
     mean_B = results_df["B"].mean()
