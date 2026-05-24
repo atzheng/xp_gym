@@ -77,13 +77,13 @@ class InterferenceNetwork:
         self,
         env,
         env_params,
-        obs: Array,
+        obs: "Observation",
     ) -> NetworkInfo:
         """
         Extract network-related information from an observation.
-        By default, simply returns the observation.
+        By default, simply returns the raw observation array.
         """
-        return obs
+        return obs.obs
 
     def update(
         self, state: InterferenceNetworkState, obs: Observation
@@ -117,7 +117,7 @@ class EmptyInterferenceNetwork:
         self,
         env,
         env_params,
-        obs: Array,
+        obs: "Observation",
     ) -> NetworkInfo:
         # Just a dummy object
         return jnp.zeros(1)
@@ -150,7 +150,7 @@ class CompleteInterferenceNetwork:
         self,
         env,
         env_params,
-        obs: Array,
+        obs: "Observation",
     ) -> NetworkInfo:
         # Just a dummy object
         return jnp.zeros(1)
@@ -197,10 +197,10 @@ class RideshareNetwork(InterferenceNetwork):
         self,
         env: Environment,
         env_params: EnvParams,
-        obs: Array,
+        obs: "Observation",
     ) -> RideshareNetworkInfo:
         """Extract cluster info (lat, lng, t) from observation."""
-        event, _, _ = obs_to_state(env_params.env_params.n_cars, obs)
+        event, _, _ = obs_to_state(env_params.env_params.n_cars, obs.obs)
         return RideshareNetworkInfo(time=event.t, location=event.src)
 
     def is_adjacent(
@@ -223,6 +223,56 @@ class RideshareNetwork(InterferenceNetwork):
             y.time >= x.time
         )
         return is_time_adj & is_space_adj
+
+
+@struct.dataclass
+class GhostNetworkInfo:
+    """
+    Network info for ghost-car-based interference.
+
+    step: the env step index (state.time) when this observation occurred.
+    triggered_origin_steps: the origin steps of ghosts that triggered at this
+        observation's step (-1 for inactive slots).
+    """
+
+    step: Integer[Array, ""]
+    triggered_origin_steps: Integer[Array, "max_ghosts"]
+
+
+@struct.dataclass
+class GhostInterferenceNetwork(InterferenceNetwork):
+    """
+    Interference network whose edges are determined by ghost car triggers.
+
+    Two observations x (past) and y (current) are adjacent if the dispatch
+    decision made at step x.step still causally affects what happens at y's
+    step — i.e., x.step appears in y.triggered_origin_steps.
+
+    Requires the environment to expose "step" and "ghost_trigger_origin_steps"
+    in obs.info (both provided by RidesharePoolDispatch).
+    """
+
+    def get_network_info(
+        self,
+        env,
+        env_params,
+        obs: "Observation",
+    ) -> GhostNetworkInfo:
+        return GhostNetworkInfo(
+            step=obs.info["step"],
+            triggered_origin_steps=obs.info["ghost_trigger_origin_steps"],
+        )
+
+    def is_adjacent(
+        self,
+        env,
+        env_params,
+        x: GhostNetworkInfo,
+        y: GhostNetworkInfo,
+    ) -> Bool[Array, ""]:
+        """x (past) is adjacent to y (current) iff the decision at x.step triggered at y's step."""
+        active = y.triggered_origin_steps >= 0
+        return jnp.any(active & (y.triggered_origin_steps == x.step))
 
 
 # Estimator Base Class
@@ -261,7 +311,7 @@ class LimitedMemoryNetworkEstimator(LimitedMemoryEstimator):
             info=obs.info,
             design_info=obs.design_info,
             network_info=self.network.get_network_info(
-                env, env_params, obs.obs
+                env, env_params, obs
             ),
         )
 
@@ -286,7 +336,7 @@ class LimitedMemoryNetworkEstimator(LimitedMemoryEstimator):
           in the window can or cannot interfere.
         """
         new_network_info = self.network.get_network_info(
-            env, env_params, obs.obs
+            env, env_params, obs
         )
 
         # Determine which other elements of the window represent
