@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "xp_gym",
+  "project_id": "3e31d810-95bd-4709-878b-d30546b8b17c"
+}
