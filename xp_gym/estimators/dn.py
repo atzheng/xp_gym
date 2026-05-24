@@ -45,10 +45,12 @@ class LimitedMemoryDNEstimator(LimitedMemoryNetworkEstimator):
 
         if self.use_known_actions:
             # Identify which clusters in history would have taken different actions
-            # under treatment vs. control policies
-            is_different_action = (
-                obs_mem.info["action_A"][0] != obs_mem.info["action_B"][0]
-            )
+            # under treatment vs. control policies.
+            # action_A/B may be scalar (window_size,) or pair (window_size, 2);
+            # compare the canonical (first) action in either case.
+            action_A = obs_mem.info["action_A"].reshape(self.window_size, -1)[:, 0]
+            action_B = obs_mem.info["action_B"].reshape(self.window_size, -1)[:, 0]
+            is_different_action = action_A != action_B
         else:
             is_different_action = True
 
