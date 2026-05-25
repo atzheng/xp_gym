@@ -1,0 +1,28 @@
+resources:
+  accelerators: A100_SXM4:1
+  # cloud: vast
+  # image_id: docker:vllm/vllm-openai:latest
+  # disk_size: 100
+
+workdir: .
+
+setup: |
+  pip install poetry && poetry lock && poetry install --with cuda
+
+run: |
+  poetry run python scripts/run.py \
+  --config-name=dq_expts \
+  'env_params.env_params.max_active_trips=2' \
+  'env_params.env_params.ghost_max_lifespan=500' \
+  'env_params.env_params.max_ghosts=1000' \
+  'env.savings_threshold_B=0.1' \
+  "run.output_path=s3://research/dq/$VASTLAUNCH_JOB_ID/"
+
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+
+secrets:
+  WANDB_API_KEY: null
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null
+  
