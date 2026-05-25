@@ -1,0 +1,23 @@
+name: smoke_test
+resources:
+  accelerators: CPU:1
+
+workdir: .
+
+setup: |
+  pip install poetry && poetry install
+
+run: |
+  poetry run python scripts/run.py \
+  --config-name=dq_expts \
+  'env.n_cars=5' \
+  'env.n_events=1000' \
+  'env.savings_threshold_B=0.2' \
+  'env_params.env_params.max_active_trips=2' \
+  '+env_params.env_params.ghost_max_lifespan=50' \
+  '+env_params.env_params.max_ghosts=32' \
+  'run.n_envs=2' \
+  'run.num_trials=1' \
+  'run.n_steps=1000' \
+  'run.estimate_every_n_steps=200' \
+  'run.output_path=output/smoke_test.csv'

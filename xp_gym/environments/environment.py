@@ -50,32 +50,27 @@ class XPEnvironment(environment.Environment):
         key, step_key = jax.random.split(key, 2)
         env_params = params.env_params
         obs = self.env.get_obs(state, env_params)
-        action_A, info_A = self.policy_A.apply(
+        action_A, _ = self.policy_A.apply(
             env_params, dict(), obs, policy_key, **params.policy_A_kwargs
         )
-        action_B, info_B = self.policy_B.apply(
+        action_B, _ = self.policy_B.apply(
             env_params, dict(), obs, policy_key, **params.policy_B_kwargs
         )
-        # Compose [canonical, counterfactual] action pair for the inner env.
-        # If treatment=1 → B is canonical, A is counterfactual; vice versa.
-        # Policies may return scalar or array actions; handle both.
-        action_A_best = action_A[0] if action_A.ndim > 0 else action_A
-        action_B_best = action_B[0] if action_B.ndim > 0 else action_B
-        canonical = jax.lax.select(treatment, action_B_best, action_A_best)
-        counterfactual = jax.lax.select(treatment, action_A_best, action_B_best)
-        inner_action = jnp.array([canonical, counterfactual])
+        # Each policy returns [threshold, threshold] (Float[Array, "2"]).
+        # Compose [threshold_canonical, threshold_counterfactual] based on treatment.
+        # treatment=0 → A is canonical, B is counterfactual; treatment=1 → vice versa.
+        threshold_A = action_A[0]
+        threshold_B = action_B[0]
+        threshold_canonical = jax.lax.select(treatment, threshold_B, threshold_A)
+        threshold_cf = jax.lax.select(treatment, threshold_A, threshold_B)
+        inner_action = jnp.array([threshold_canonical, threshold_cf])
 
         next_obs, next_state, reward, done, info = self.env.step(
             step_key, state, inner_action, env_params
         )
 
-        return (
-            next_obs,
-            next_state,
-            reward,
-            done,
-            {"action_A": action_A, "action_B": action_B, **info},
-        )
+        # info already contains action_A / action_B (chosen car indices from inner env).
+        return next_obs, next_state, reward, done, info
 
     @property
     def num_actions(self):
