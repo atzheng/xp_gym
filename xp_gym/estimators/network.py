@@ -272,7 +272,9 @@ class GhostInterferenceNetwork(InterferenceNetwork):
     ) -> Bool[Array, ""]:
         """x (past) is adjacent to y (current) iff the decision at x.step triggered at y's step."""
         active = y.triggered_origin_steps >= 0
-        return jnp.any(active & (y.triggered_origin_steps == x.step))
+        return jnp.any(
+            (active & (y.triggered_origin_steps == x.step)) | (x.step == y.step)
+        )
 
 
 # Estimator Base Class
@@ -295,6 +297,7 @@ class LimitedMemoryNetworkEstimator(LimitedMemoryEstimator):
 
     This approximation be removed by setting the window size sufficiently large.
     """
+
     network: InterferenceNetwork
 
     def process_obs(
@@ -310,9 +313,7 @@ class LimitedMemoryNetworkEstimator(LimitedMemoryEstimator):
             reward=obs.reward,
             info=obs.info,
             design_info=obs.design_info,
-            network_info=self.network.get_network_info(
-                env, env_params, obs
-            ),
+            network_info=self.network.get_network_info(env, env_params, obs),
         )
 
     def interference_mask(
@@ -335,9 +336,7 @@ class LimitedMemoryNetworkEstimator(LimitedMemoryEstimator):
         @param mask: Optional mask to indicate which observations
           in the window can or cannot interfere.
         """
-        new_network_info = self.network.get_network_info(
-            env, env_params, obs
-        )
+        new_network_info = self.network.get_network_info(env, env_params, obs)
 
         # Determine which other elements of the window represent
         # interfering observations
