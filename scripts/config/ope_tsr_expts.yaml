@@ -1,0 +1,52 @@
+# Off-policy evaluation (OPE) estimators of rho(B) - rho(A) on the pooled
+# rideshare env, from the unit-randomized (p=0.5) experiment trajectory.
+# Same design / seeds as lstd_expts.yaml, so trajectories are paired with it.
+# The TSRI estimators need a different design (different trajectories): see
+# tsri_expts.yaml.
+defaults:
+  - env: rideshare_pool
+  - env_params: rideshare_pool
+  - design: unit_randomized
+  - _self_
+
+run:
+  output_path: "output/ope_out.csv"
+  n_envs: 25
+  num_trials: 2
+  n_steps: 500000
+  estimate_every_n_steps: 10000
+  seed: 42
+
+env:
+  savings_threshold_B: 0.1
+
+env_params:
+  env_params:
+    max_active_trips: 2
+    # no ghosts needed (trajectories don't depend on them)
+    max_groups: 1
+    max_ghosts_per_group: 1
+    ghost_max_lifespan: 1
+
+estimators:
+  naive:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
+    use_known_actions: true
+  ope:
+    _target_: xp_gym.estimators.ope_pool.PoolOPEEstimator
+    p: ${design.p}
+    chunk: ${run.estimate_every_n_steps}
+    thresholds: ["${env.savings_threshold_A}", "${env.savings_threshold_B}"]
+    use_zones: true
+    burn_in: 5000              # drop the initial fleet fill-up transient
+    cv_blocks: 5               # interleaved chunk blocks for the CV selection
+    # LSTD ridge on standardized features (rho not shrunk)
+    ridges: [1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1, 1.0, 10.0]
+    # Diff-GQ1 fixed-point Tikhonov weight (acts on A^T C^+ A, i.e. ~ ridge^2)
+    gq_etas: [1.0e-12, 1.0e-11, 1.0e-10, 1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5,
+              1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1]
+    # online TD / Diff-GQ1 step sizes (normalized: actual step = alpha / D)
+    alphas: [1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 3.0e-1, 1.0]
+    td_eta: 1.0
+    gq_eta: 0.0
+    gq_beta_ratio: 1.0
