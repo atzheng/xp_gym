@@ -2,7 +2,9 @@
 
 usage: python scripts/summarize_lstd.py stb run_csv [run_csv ...]
 ATE per threshold: B=0.1 from dq/ate/ate_stb.csv (1000 runs); others from
-lambda(1)-lambda(0) of the CRN lambda(p) sweep (64 runs, SE ~0.06).
+lambda(1)-lambda(0) of the CRN lambda(p) sweep: dq/ate2 (256 runs) if present,
+else dq/lambda (64 runs, SE ~0.06).  Also prints DQ's own estimand lambda'(0.5),
+estimated as (lambda(0.7)-lambda(0.3))/0.4.
 """
 import os, sys
 import numpy as np, pandas as pd
@@ -15,9 +17,22 @@ def true_ate(stb):
         a = pd.read_csv("s3://research/dq/ate/ate_stb.csv", storage_options=SO)
         a = a[a.metric == "reward"].groupby("treatment").value.mean()
         return a["B"] - a["A"]
-    d = pd.read_csv(f"s3://research/dq/lambda/lambda_stb{stb}.csv", storage_options=SO)
-    w = d.groupby(["p", "env"]).reward.mean().unstack(0)
-    return (w[1.0] - w[0.0]).mean()
+    return _sweep(stb)[1.0] - _sweep(stb)[0.0]
+
+
+def dq_estimand(stb):
+    w = _sweep(stb)
+    return (w[0.7] - w[0.3]) / 0.4 if 0.3 in w and 0.7 in w else np.nan
+
+
+def _sweep(stb):
+    for f in (f"s3://research/dq/ate2/ate_stb{stb}.csv", f"s3://research/dq/lambda/lambda_stb{stb}.csv"):
+        try:
+            d = pd.read_csv(f, storage_options=SO)
+        except FileNotFoundError:
+            continue
+        return d.groupby(["p", "env"]).reward.mean().unstack(0).mean()
+    raise FileNotFoundError(stb)
 
 
 def summarize(df, ate, skip=("env_id", "steps", "trial", "naive_ipw")):
@@ -44,6 +59,6 @@ if __name__ == "__main__":
         chk = df.merge(d[["env_id", "steps", "trial", "naive"]], on=["env_id", "steps", "trial"])
         assert np.allclose(chk.naive_x, chk.naive_y, rtol=1e-4), "runs are not paired"
         df = df.merge(d[["env_id", "steps", "trial"] + new], on=["env_id", "steps", "trial"])
-    print(f"B={stb}  ATE={ate:.3f}")
+    print(f"B={stb}  ATE={ate:.3f}  DQ estimand lambda'(0.5)={dq_estimand(stb):.3f}")
     pd.set_option("display.width", 200)
     print(summarize(df, ate).round(2).to_string(index=False))

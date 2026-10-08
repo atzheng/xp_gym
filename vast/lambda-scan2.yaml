@@ -1,0 +1,18 @@
+name: dq-lambda-scan
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  for stb in $STBS; do
+    uv run python scripts/lambda_p.py "s3://research/dq/lambda/lambda_stb${stb}.csv" 64 500000 $stb 2 0.3 0.7 1.0
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STBS: "0.65 0.7 0.75 0.8"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null
