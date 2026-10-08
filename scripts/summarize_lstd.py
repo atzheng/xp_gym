@@ -31,6 +31,9 @@ def _sweep(stb):
             d = pd.read_csv(f, storage_options=SO)
         except FileNotFoundError:
             continue
+        if not (d.p == 0.0).any():  # p=0 doesn't depend on B; stored once per env count
+            p0 = pd.read_csv(f"s3://research/dq/ate2/ate_p0_E{d.env.nunique()}.csv", storage_options=SO)
+            d = pd.concat([d, p0])
         return d.groupby(["p", "env"]).reward.mean().unstack(0).mean()
     raise FileNotFoundError(stb)
 

@@ -3,6 +3,7 @@ common random numbers across p.  DQ's estimand is lambda'(0.5); the ATE is
 lambda(1) - lambda(0).
 
 usage: python scripts/lambda_p.py out.csv n_envs n_steps stb [mat] [ps...]
+stb may be "A:B" to set arm A's threshold too (default A=0).
 (the event table is always the first 500k events, matching dq_expts)
 """
 import sys, time
@@ -10,12 +11,12 @@ import jax, jax.numpy as jnp, numpy as np, pandas as pd
 from xp_gym.environments.rideshare import XPRidesharePoolDispatchEnv
 from xp_gym.io import to_csv
 
-out = sys.argv[1]; E = int(sys.argv[2]); N = int(sys.argv[3]); stb = float(sys.argv[4])
+out = sys.argv[1]; E = int(sys.argv[2]); N = int(sys.argv[3]); sta, stb = (float(x) for x in sys.argv[4].split(":")) if ":" in sys.argv[4] else (0.0, float(sys.argv[4]))
 mat = int(sys.argv[5]) if len(sys.argv) > 5 else 2
 ps = [float(x) for x in sys.argv[6:]] or [0.0, 0.1, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.0]
 CHUNK = 10000
 
-env = XPRidesharePoolDispatchEnv(n_cars=300, n_events=500000, savings_threshold_A=0.0,
+env = XPRidesharePoolDispatchEnv(n_cars=300, n_events=500000, savings_threshold_A=sta,
                                  savings_threshold_B=stb)
 p0 = env.default_params
 params = p0.replace(env_params=p0.env_params.replace(
