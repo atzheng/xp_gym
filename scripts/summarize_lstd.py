@@ -1,6 +1,7 @@
 """Summarize final-step estimates vs the true ATE.
 
 usage: python scripts/summarize_lstd.py stb run_csv [run_csv ...]
+stb may be a threshold pair "A:B" (truth from ate2/ate_pair{A:B} or lambda/lambda_pair{A:B}).
 ATE per threshold: B=0.1 from dq/ate/ate_stb.csv (1000 runs); others from
 lambda(1)-lambda(0) of the CRN lambda(p) sweep: dq/ate2 (256 runs) if present,
 else dq/lambda (64 runs, SE ~0.06).  Also prints DQ's own estimand lambda'(0.5),
@@ -13,7 +14,7 @@ SO = {"client_kwargs": {"endpoint_url": os.environ.get("AWS_ENDPOINT_URL")}}
 
 
 def true_ate(stb):
-    if abs(stb - 0.1) < 1e-9:
+    if stb == 0.1:
         a = pd.read_csv("s3://research/dq/ate/ate_stb.csv", storage_options=SO)
         a = a[a.metric == "reward"].groupby("treatment").value.mean()
         return a["B"] - a["A"]
@@ -26,7 +27,8 @@ def dq_estimand(stb):
 
 
 def _sweep(stb):
-    for f in (f"s3://research/dq/ate2/ate_stb{stb}.csv", f"s3://research/dq/lambda/lambda_stb{stb}.csv"):
+    kind = "pair" if ":" in str(stb) else "stb"
+    for f in (f"s3://research/dq/ate2/ate_{kind}{stb}.csv", f"s3://research/dq/lambda/lambda_{kind}{stb}.csv"):
         try:
             d = pd.read_csv(f, storage_options=SO)
         except FileNotFoundError:
@@ -52,7 +54,7 @@ def summarize(df, ate, skip=("env_id", "steps", "trial", "naive_ipw")):
 
 
 if __name__ == "__main__":
-    stb = float(sys.argv[1])
+    stb = sys.argv[1] if ":" in sys.argv[1] else float(sys.argv[1])
     ate = true_ate(stb)
     dfs = [pd.read_csv(f, storage_options=SO if f.startswith("s3://") else None) for f in sys.argv[2:]]
     df = dfs[0]
