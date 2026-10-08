@@ -6,8 +6,8 @@ defaults:
 
 run:
   output_path: "output/test_out.csv"
-  n_envs: 50
-  num_trials: 10
+  n_envs: 25
+  num_trials: 2
   n_steps: 500000
   estimate_every_n_steps: 10000
   seed: 42
@@ -15,17 +15,29 @@ run:
 # Configuration for ATE computation, used by compute-ate.py
 ate:
   output_path: "output/ate.csv"
-  k: 100  # Total number of trials
+  k: 1000  # Total number of trials
   batch_size: 100  # Number of environments to run in parallel
   n_steps: ${run.n_steps} # Number of events to simulate per trial
 
 estimators:
   naive:
     _target_: xp_gym.estimators.naive.NaiveEstimator
+    use_known_actions: true
+  naive_ipw:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
+    use_known_actions: false
   dn_ghost:
     _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
     network:
       _target_: xp_gym.estimators.network.GhostInterferenceNetwork
+    window_size: 2000
+    use_known_actions: true
+    baseline: 48
+  dn_network_1000:
+    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+    network:
+      _target_: xp_gym.estimators.network.RideshareNetwork
+      lookahead_steps: 1000
     window_size: 2000
     use_known_actions: true
     baseline: 48
@@ -39,60 +51,51 @@ estimators:
   #     lookahead_steps: 600
   #   window_size: 2000
   #   baseline: 2
-  dn_network_100_5:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 5
-      lookahead_steps: 100
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
-  dn_network_600_5:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 5
-      lookahead_steps: 600
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
-  dn_network_300_5:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 5
-      lookahead_steps: 300
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
-  dn_network_100:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 2
-      lookahead_steps: 100
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
-  dn_network_600:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 2
-      lookahead_steps: 600
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
-  dn_network_300:
-    _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
-    network:
-      _target_: xp_gym.estimators.network.RideshareNetwork
-      max_spatial_distance: 2
-      lookahead_steps: 300
-    window_size: 2000
-    use_known_actions: true
-    baseline: 48
+  # dn_network_600_5:
+  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+  #   network:
+  #     _target_: xp_gym.estimators.network.RideshareNetwork
+  #     max_spatial_distance: 5
+  #     lookahead_steps: 600
+  #   window_size: 2000
+  #   use_known_actions: true
+  #   baseline: 48
+  # dn_network_300_5:
+  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+  #   network:
+  #     _target_: xp_gym.estimators.network.RideshareNetwork
+  #     max_spatial_distance: 5
+  #     lookahead_steps: 300
+  #   window_size: 2000
+  #   use_known_actions: true
+  #   baseline: 48
+  # dn_network_100:
+  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+  #   network:
+  #     _target_: xp_gym.estimators.network.RideshareNetwork
+  #     max_spatial_distance: 2
+  #     lookahead_steps: 100
+  #   window_size: 2000
+  #   use_known_actions: true
+  #   baseline: 48
+  # dn_network_600:
+  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+  #   network:
+  #     _target_: xp_gym.estimators.network.RideshareNetwork
+  #     max_spatial_distance: 2
+  #     lookahead_steps: 600
+  #   window_size: 2000
+  #   use_known_actions: true
+  #   baseline: 48
+  # dn_network_300:
+  #   _target_: xp_gym.estimators.dn.LimitedMemoryDNEstimator
+  #   network:
+  #     _target_: xp_gym.estimators.network.RideshareNetwork
+  #     max_spatial_distance: 2
+  #     lookahead_steps: 300
+  #   window_size: 2000
+  #   use_known_actions: true
+  #   baseline: 48
   # pg1:
   #   _target_: xp_gym.estimators.tpg.TPGEstimator
   #   k: 1

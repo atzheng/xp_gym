@@ -248,7 +248,7 @@ class GhostInterferenceNetwork(InterferenceNetwork):
     decision made at step x.step still causally affects what happens at y's
     step — i.e., x.step appears in y.triggered_origin_steps.
 
-    Requires the environment to expose "step" and "ghost_trigger_origin_steps"
+    Requires the environment to expose "step" and "group_trigger_origin_steps"
     in obs.info (both provided by RidesharePoolDispatch).
     """
 
@@ -260,7 +260,7 @@ class GhostInterferenceNetwork(InterferenceNetwork):
     ) -> GhostNetworkInfo:
         return GhostNetworkInfo(
             step=obs.info["step"],
-            triggered_origin_steps=obs.info["ghost_trigger_origin_steps"],
+            triggered_origin_steps=obs.info["group_trigger_origin_steps"],
         )
 
     def is_adjacent(

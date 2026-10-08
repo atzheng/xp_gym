@@ -18,7 +18,7 @@ The estimators in question are the "Differences-in-Qs" estimators specified in t
 
 We are primarily running experiments on a simulation of UberPool,  where requests are experimental units, randomized into two dispatch algorithms A and B, and interference comes from the fact that dispatch decisions made for any one request affect outcomes for every subsequent request.
 
-Simulations are contained in the `or_gymnax` package; we are using the `pool` branch
+Simulations are contained in the `or_gymnax` package; we are using the `pool` branch. 
 
 ## Architecture
 

@@ -1,4 +1,4 @@
-name: dq
+name: dq-ate
 resources:
   accelerators: A100_SXM4:1
   # cloud: vast
@@ -13,14 +13,13 @@ setup: |
   uv sync --group cuda
 
 run: |
-  uv run python scripts/run.py \
-  --config-name=dq_expts \
-  'env_params.env_params.max_active_trips=2' \
-  '+env_params.env_params.ghost_max_lifespan=2500' \
-  '+env_params.env_params.max_groups=2500' \
-  '+env_params.env_params.max_ghosts_per_group=16' \
-  'env.savings_threshold_B=0.1' \
-  "run.output_path=s3://research/dq/$VASTLAUNCH_JOB_ID/"
+    uv run python scripts/compute-ate.py \
+    --config-name=dq_expts \
+    'env_params.env_params.max_active_trips=2' \
+    '+env_params.env_params.ghost_max_lifespan=1' \
+    '+env_params.env_params.max_groups=1' \
+    "env.savings_threshold_B=0.1" \
+    "ate.output_path=s3://research/dq/ate/ate_stb${threshold}.csv"
 
 envs:
   AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com

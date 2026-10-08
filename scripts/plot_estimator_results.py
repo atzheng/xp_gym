@@ -27,11 +27,17 @@ def parse_ate_argument(ate_arg):
         # If that fails, try to read as CSV file
         try:
             df = pd.read_csv(ate_arg)
-            if "A" not in df.columns or "B" not in df.columns:
+            if "treatment" in df.columns and "metric" in df.columns:
+                # Long format from compute-ate.py
+                reward_df = df[df["metric"] == "reward"]
+                ate = (reward_df[reward_df["treatment"] == "B"]["value"].mean()
+                       - reward_df[reward_df["treatment"] == "A"]["value"].mean())
+            elif "A" in df.columns and "B" in df.columns:
+                ate = df["B"].mean() - df["A"].mean()
+            else:
                 raise ValueError(
-                    f"CSV file {ate_arg} must contain columns 'A' and 'B'"
+                    f"CSV file {ate_arg} must contain (treatment, metric, value) or (A, B) columns"
                 )
-            ate = df["B"].mean() - df["A"].mean()
             print(f"Computed ATE from {ate_arg}: {ate:.6f}")
             return ate
         except Exception as e:

@@ -25,9 +25,9 @@ from or_gymnax.rideshare_pool import (
     get_sequences,
     compute_real_car_costs,
     greedy_select_car,
-    check_ghost_triggers,
-    update_triggered_ghosts,
-    expire_ghosts,
+    check_group_triggers,
+    update_triggered_ghost_groups,
+    expire_groups,
 )
 
 from xp_gym.environments.environment import XPEnvironment
@@ -102,7 +102,7 @@ class SyntheticRidesharePoolDispatch(RidesharePoolDispatch):
             distances=_SYNTHETIC_DISTANCES,
             n_cars=self.n_cars,
             max_active_trips=2,
-            max_ghosts=2 * self.N_NODES,
+            max_groups=self.N_NODES,
             ghost_max_lifespan=50,
         )
 

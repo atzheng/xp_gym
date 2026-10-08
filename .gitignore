@@ -13,3 +13,12 @@ htmlcov
 .dolt/
 *.db
 .beads-credential-key
+
+# Run outputs and local artifacts
+/output/
+/outputs/
+/scripts/output/
+/scripts/outputs/
+/.hydra/
+/plots/
+/.claude/settings.local.json

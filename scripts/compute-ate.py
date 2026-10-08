@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 from functools import partial
 import pandas as pd
 from tqdm import tqdm
@@ -9,25 +10,67 @@ from omegaconf import DictConfig, OmegaConf
 
 from xp_gym.io import to_csv
 
+METRICS = [
+    "reward",
+    "is_unfulfill",
+    "marginal_cost",
+    "utilization",
+    "pct_cars_on_trip",
+]
+
 
 def stepper(env, env_params, policy, carry, key):
-    obs, state, total_reward = carry
+    obs, state, accum = carry
     key, policy_key = jax.random.split(key)
     action, action_info = policy.apply(env_params, dict(), obs, policy_key)
-    new_obs, new_state, reward, _, _ = env.step(key, state, action, env_params)
-    return (new_obs, new_state, total_reward + reward), None
+    new_obs, new_state, reward, _, info = env.step(
+        key, state, action, env_params
+    )
+    is_unfulfill = info["is_unfulfill"].astype(jnp.float32)
+    marginal_cost = info["marginal_cost"].astype(jnp.float32)
+    utilization = info["utilization"].astype(jnp.float32)
+    pct_cars_on_trip = info["pct_cars_on_trip"].astype(jnp.float32)
+    new_accum = {
+        "reward_sum": accum["reward_sum"] + reward.astype(jnp.float32),
+        "is_unfulfill_sum": accum["is_unfulfill_sum"] + is_unfulfill,
+        "marginal_cost_sum": accum["marginal_cost_sum"]
+        + marginal_cost * (1 - is_unfulfill),
+        "fulfilled_count": accum["fulfilled_count"] + (1 - is_unfulfill),
+        "utilization_sum": accum["utilization_sum"] + utilization,
+        "pct_cars_on_trip_sum": accum["pct_cars_on_trip_sum"]
+        + pct_cars_on_trip,
+    }
+    return (new_obs, new_state, new_accum), None
 
 
 def run(env, env_params, policy, key, n_steps):
     keys = jax.random.split(key, n_steps)
     obs, state = env.reset(key, env_params)
+    init_accum = {
+        "reward_sum": jnp.array(0.0),
+        "is_unfulfill_sum": jnp.array(0.0),
+        "marginal_cost_sum": jnp.array(0.0),
+        "fulfilled_count": jnp.array(0.0),
+        "utilization_sum": jnp.array(0.0),
+        "pct_cars_on_trip_sum": jnp.array(0.0),
+    }
     final, _ = jax.lax.scan(
         partial(stepper, env, env_params, policy),
-        (obs, state, 0),
+        (obs, state, init_accum),
         keys,
     )
-    _, _, total_reward = final
-    return total_reward / n_steps
+    _, _, accum = final
+    return {
+        "reward": accum["reward_sum"] / n_steps,
+        "is_unfulfill": accum["is_unfulfill_sum"] / n_steps,
+        "marginal_cost": jnp.where(
+            accum["fulfilled_count"] > 0,
+            accum["marginal_cost_sum"] / accum["fulfilled_count"],
+            jnp.nan,
+        ),
+        "utilization": accum["utilization_sum"] / n_steps,
+        "pct_cars_on_trip": accum["pct_cars_on_trip_sum"] / n_steps,
+    }
 
 
 vmap_run = jax.vmap(run, in_axes=(None, None, None, 0, None))
@@ -37,10 +80,13 @@ def run_batch(env, env_params, A, B, key, n_steps, batch_size):
     keys = jax.random.split(key, batch_size)
     results_A = vmap_run(env, env_params, A, keys, n_steps)
     results_B = vmap_run(env, env_params, B, keys, n_steps)
-    return {
-        "A": results_A,
-        "B": results_B,
-    }
+    rows = []
+    for metric in METRICS:
+        for v in results_A[metric]:
+            rows.append({"treatment": "A", "metric": metric, "value": float(v)})
+        for v in results_B[metric]:
+            rows.append({"treatment": "B", "metric": metric, "value": float(v)})
+    return rows
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
@@ -64,17 +110,22 @@ def main(cfg: DictConfig) -> None:
     n_batches = k // batch_size
     jax.debug.print(f"n_batches: {n_batches}")
     keys = jax.random.split(jax.random.PRNGKey(seed), n_batches)
-    results = [
-        run_batch(env, env_params, A, B, key, n_steps, batch_size)
-        for key in tqdm(keys)
-    ]
+    all_rows = []
+    for key in tqdm(keys):
+        all_rows.extend(
+            run_batch(env, env_params, A, B, key, n_steps, batch_size)
+        )
 
-    results_df = pd.concat(map(pd.DataFrame, results))
+    results_df = pd.DataFrame(all_rows)
     to_csv(results_df, output)
 
-    mean_A = results_df["A"].mean()
-    mean_B = results_df["B"].mean()
-    ate = mean_B - mean_A
+    reward_A = results_df[
+        (results_df["treatment"] == "A") & (results_df["metric"] == "reward")
+    ]["value"].mean()
+    reward_B = results_df[
+        (results_df["treatment"] == "B") & (results_df["metric"] == "reward")
+    ]["value"].mean()
+    ate = reward_B - reward_A
     print(f"Average ATE (B - A): {ate:.6f}")
 
 
