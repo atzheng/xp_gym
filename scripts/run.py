@@ -31,6 +31,9 @@ def run(cfg: DictConfig) -> None:
     # Create design and estimators using standard hydra instantiation
     design = instantiate(cfg.design)
     estimators = {k: instantiate(v) for k, v in cfg.estimators.items()}
+    for k, est in estimators.items():
+        if hasattr(est, "chunk"):
+            assert est.chunk == cfg.run.estimate_every_n_steps, f"{k}: chunk must equal estimate_every_n_steps"
     rng = jax.random.PRNGKey(seed)
     trial_rngs = jax.random.split(rng, cfg.run.num_trials)
     vmap_simulate = jax.vmap(simulate, in_axes=(None, None, None, None, 0, None, None))
@@ -49,6 +52,13 @@ def run(cfg: DictConfig) -> None:
             cfg.run.n_steps,
             cfg.run.estimate_every_n_steps,
         )
+
+        # Vector-valued estimators expose `labels`: one column per entry
+        for k, est in estimators.items():
+            if hasattr(est, "labels"):
+                v = results.pop(k)
+                for j, lab in enumerate(est.labels):
+                    results[f"{k}_{lab}"] = v[..., j]
 
         results["env_id"] = jnp.tile(
             jnp.expand_dims(jnp.arange(cfg.run.n_envs), 1), (1, n_estimates)

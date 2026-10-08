@@ -62,7 +62,13 @@ def step_n_and_estimate(
         carry,
         jax.random.split(rng, n),
     )
-    est_states = carry[2]
+    # Optional per-chunk hook (e.g. batched O(D^2) statistics updates)
+    est_states = {
+        k: (est.end_chunk(env, env_params, design, carry[2][k])
+            if hasattr(est, "end_chunk") else carry[2][k])
+        for k, est in estimators.items()
+    }
+    carry = (carry[0], carry[1], est_states, carry[3])
     estimates = {
         est_name: estimator.estimate(env, env_params, design, est_states[est_name])
         for est_name, estimator in estimators.items()

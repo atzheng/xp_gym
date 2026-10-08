@@ -1,0 +1,17 @@
+name: dq-fork-oracle
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  uv run python scripts/fork_oracle.py "s3://research/dq/fork/fork_stb${STB}_s${SEED}.npz" 128 24 100000 3000 40000 $STB $SEED
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STB: "0.1"
+  SEED: "1"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

@@ -1,0 +1,8 @@
+scratch/
+outputs/
+output/
+bkp/
+listings.csv.gz
+*.png
+plots/
+.venv/

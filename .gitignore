@@ -22,3 +22,5 @@ htmlcov
 /.hydra/
 /plots/
 /.claude/settings.local.json
+
+scratch/
