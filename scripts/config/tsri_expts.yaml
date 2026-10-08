@@ -1,0 +1,34 @@
+# TSRN / CR / LR / TSRI-k estimators (Johari, Li, Liskovich & Weintraub) on the
+# pooled rideshare env under a two-sided randomized design (requests x cars).
+# The naive estimator is not included: under TSR the env action is a per-car
+# vector; the TSR analogues (tsrn, cr, lr) are columns of the tsri estimator.
+defaults:
+  - env: rideshare_pool_tsr
+  - env_params: rideshare_pool
+  - design: tsr
+  - _self_
+
+run:
+  output_path: "output/tsri_out.csv"
+  n_envs: 25
+  num_trials: 2
+  n_steps: 500000
+  estimate_every_n_steps: 10000
+  seed: 42
+
+env:
+  savings_threshold_B: 0.1
+
+env_params:
+  env_params:
+    max_active_trips: 2
+    max_groups: 1
+    max_ghosts_per_group: 1
+    ghost_max_lifespan: 1
+
+estimators:
+  tsri:
+    _target_: xp_gym.estimators.tsri.TSRIEstimator
+    # beta = exp(-lambda/tau) in the paper; 0.3679 = exp(-1) (lambda/tau ~ 1 here)
+    betas: [0.0, 0.1, 0.25, 0.3679, 0.5, 0.75, 0.9, 1.0]
+    ks: [1, 2]

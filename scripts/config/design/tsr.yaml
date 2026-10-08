@@ -1,0 +1,8 @@
+# Two-sided randomization (Johari et al. 2022): requests treated w.p. a_C,
+# cars w.p. a_L (fixed per run); arm B's threshold applies only to
+# treated request x treated car.  market_balance (lambda/tau) != null switches
+# a_C, a_L to the paper's eq. (26).
+_target_: xp_gym.designs.tsr.TwoSidedRandomizedDesign
+a_C: 0.5
+a_L: 0.5
+market_balance: null

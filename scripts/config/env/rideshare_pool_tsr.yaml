@@ -1,0 +1,7 @@
+# Pooled dispatch env with per-car treatment (two-sided randomization).
+_target_: xp_gym.environments.rideshare_pool_tsr.XPRidesharePoolTSREnv
+n_cars: 300
+n_events: ${run.n_steps}
+savings_threshold_A: 0.0
+savings_threshold_B: 0.2
+temperature: 0.1

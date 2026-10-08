@@ -1,0 +1,26 @@
+name: dq-tsri-eval
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+# Two TSR designs per threshold: a_C = a_L = 0.5, and the paper's eq. (26)
+# with market balance lambda/tau = 1 (a_C = 0.816, a_L = 0.684; beta = e^-1).
+# Ghost-free env params are set in tsri_expts.yaml.
+run: |
+  for stb in $STBS; do
+    uv run python scripts/run.py --config-name=tsri_expts \
+      "env.savings_threshold_B=$stb" \
+      "run.output_path=s3://research/dq/tsri/$VASTLAUNCH_JOB_ID/tsri_stb${stb}_ac0.5_al0.5.csv"
+    uv run python scripts/run.py --config-name=tsri_expts \
+      "env.savings_threshold_B=$stb" design.market_balance=1.0 \
+      "run.output_path=s3://research/dq/tsri/$VASTLAUNCH_JOB_ID/tsri_stb${stb}_mb1.csv"
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STBS: "0.1 0.2 0.3"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null
