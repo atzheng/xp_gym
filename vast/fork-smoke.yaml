@@ -1,0 +1,24 @@
+name: dq-fork-smoke
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  sta=${PAIR%%:*}; stb=${PAIR##*:}
+  time uv run python scripts/run.py --config-name=fork_expts \
+    "env.savings_threshold_A=$sta" "env.savings_threshold_B=$stb" \
+    '+env_params.env_params.max_groups=1' \
+    '+env_params.env_params.max_ghosts_per_group=1' \
+    '+env_params.env_params.ghost_max_lifespan=1' \
+    run.n_envs=25 run.num_trials=1 run.n_steps=30000 $EXTRA \
+    "run.output_path=s3://research/dq/fork/$VASTLAUNCH_JOB_ID/smoke_pair${sta}:${stb}.csv"
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  PAIR: "0.35:0.49"
+  EXTRA: "estimators.lstd.fork_ghosts=48"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

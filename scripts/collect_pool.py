@@ -8,6 +8,7 @@ For each env writes <outdir>/env{e}.npz with
   didx  : (n_differ,) step index of those rows
 
 usage: python scripts/collect_pool.py outdir n_envs n_steps stb [seed] [K]
+(stb may be "A:B" to set arm A's threshold too)
 (K>0 adds match_features over K reference requests; outdir may be s3://)
 """
 import os, sys, time
@@ -17,7 +18,8 @@ from xp_gym.environments.rideshare_pool import insert_and_optimize_trip
 from xp_gym.estimators.pool_features import (pool_features, load_node_to_zone, feature_names,
     reference_requests, match_costs, match_features_from_costs, match_feature_names)
 
-outdir = sys.argv[1]; E = int(sys.argv[2]); N = int(sys.argv[3]); stb = float(sys.argv[4])
+outdir = sys.argv[1]; E = int(sys.argv[2]); N = int(sys.argv[3])
+sta, stb = (float(x) for x in sys.argv[4].split(":")) if ":" in sys.argv[4] else (0.0, float(sys.argv[4]))
 seed = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 K = int(sys.argv[6]) if len(sys.argv) > 6 else 0
 # match features at tau + offset (seconds); later offsets use the first K2 refs
@@ -28,7 +30,7 @@ if remote: outdir = "/tmp/collect_out"
 CHUNK = 10000
 os.makedirs(outdir, exist_ok=True)
 
-env = XPRidesharePoolDispatchEnv(n_cars=300, n_events=500000, savings_threshold_A=0.0,
+env = XPRidesharePoolDispatchEnv(n_cars=300, n_events=500000, savings_threshold_A=sta,
                                  savings_threshold_B=stb)
 p0 = env.default_params
 params = p0.replace(env_params=p0.env_params.replace(
@@ -36,7 +38,7 @@ params = p0.replace(env_params=p0.env_params.replace(
 ip = params.env_params
 n2z, NZ = load_node_to_zone()
 names = feature_names(NZ)
-TH = (0.0, stb)
+TH = (sta, stb)
 if K:
     ref_src, ref_dest = reference_requests(ip.events, K)
     for o in OFFSETS:

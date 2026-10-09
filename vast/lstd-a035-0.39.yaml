@@ -1,0 +1,25 @@
+name: dq-lstd-a035-0.39
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  for pair in $PAIRS; do
+    sta=${pair%%:*}; stb=${pair##*:}
+    uv run python scripts/run.py --config-name=lstd_expts \
+      "env.savings_threshold_A=$sta" "env.savings_threshold_B=$stb" \
+      '+env_params.env_params.max_groups=1' \
+      '+env_params.env_params.max_ghosts_per_group=1' \
+      '+env_params.env_params.ghost_max_lifespan=1' \
+      'estimators.lstd.trace_lambdas=[0.0,0.5,0.8,0.9,0.95,0.97]' \
+      "run.output_path=s3://research/dq/lstd/$VASTLAUNCH_JOB_ID/lstd_pair${sta}:${stb}.csv"
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  PAIRS: "0.35:0.39"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

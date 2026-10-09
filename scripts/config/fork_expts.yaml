@@ -1,0 +1,39 @@
+# Fork DQ (n-step paired DQ with model-based counterfactual rollouts + LSTD tail).
+defaults:
+  - env: rideshare_pool
+  - env_params: rideshare_pool
+  - design: unit_randomized
+  - _self_
+
+run:
+  output_path: "output/fork_out.csv"
+  n_envs: 25
+  num_trials: 2
+  n_steps: 500000
+  estimate_every_n_steps: 10000
+  seed: 42
+
+env:
+  savings_threshold_B: 0.1
+
+env_params:
+  env_params:
+    max_active_trips: 2
+
+estimators:
+  naive:
+    _target_: xp_gym.estimators.naive.NaiveEstimator
+    use_known_actions: true
+  lstd:
+    _target_: xp_gym.estimators.fork_dq_pool.ForkDQEstimator
+    gamma: 1.0
+    ridge: 1.0e-6
+    trace_lambdas: [0.0, 0.9]
+    chunk: ${run.estimate_every_n_steps}
+    thresholds: ["${env.savings_threshold_A}", "${env.savings_threshold_B}"]
+    use_zones: true
+    jackknife_blocks: 5          # 5 blocks x 10 chunks = 500k steps
+    jackknife_block_chunks: 10
+    fork_horizons: [1, 10, 30, 100, 300, 1000]
+    fork_slots: 192
+    fork_ghosts: 16
