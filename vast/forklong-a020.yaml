@@ -1,0 +1,28 @@
+name: dq-forklong-a020
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  # payback horizon at A=0.2:0.26: long reward-only forks (forkmc_H) + fork-TD tails, dev seed 0, 2x10 envs
+  sta=${PAIR%%:*}; stb=${PAIR##*:}
+  uv run python scripts/run.py --config-name=fork_expts \
+    "env.savings_threshold_A=$sta" "env.savings_threshold_B=$stb" \
+    '+env_params.env_params.max_groups=1' \
+    '+env_params.env_params.max_ghosts_per_group=1' \
+    '+env_params.env_params.ghost_max_lifespan=1' \
+    'estimators.lstd.trace_lambdas=[0.0]' estimators.lstd.jackknife_blocks=0 \
+    estimators.lstd.fork_td=true '+estimators.lstd.fork_td_ridges=[1e-4]' +estimators.lstd.fork_td_basis=16 \
+    +estimators.lstd.fork_td_extra=true '+estimators.lstd.fork_td_sub=[[16,0,0],[16,0,1]]' \
+    estimators.lstd.fork_ghosts=192 'estimators.lstd.fork_horizons=[1,300,1000,2000,3000,5000]' \
+    estimators.lstd.fork_slots=768 run.n_envs=10 run.seed=0 \
+    "run.output_path=s3://research/dq/forklong/$VASTLAUNCH_JOB_ID/forklong_pair${sta}:${stb}_seed0.csv"
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  PAIR: "0.2:0.26"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

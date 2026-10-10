@@ -27,7 +27,10 @@ def main():
     params = p0.replace(env_params=p0.env_params.replace(
         max_active_trips=2, max_groups=1, max_ghosts_per_group=1, ghost_max_lifespan=1))
     est = ForkDQEstimator(gamma=1.0, ridge=1e-6, trace_lambdas=(0.0,), chunk=N, thresholds=(STA, STB),
-                          fork_horizons=HS, fork_slots=64, fork_ghosts=40)
+                          fork_horizons=HS, fork_slots=64, fork_ghosts=40, fork_td=True,
+                          fork_td_basis=16, fork_td_harmonics=2,
+                          fork_td_extra=True,
+                          fork_td_sub=((16, 2), (8, 1, 0), (16, 0, 1)))
     design = UnitRandomizedDesign(p=0.5)
     carry = init_carry({"f": est}, design, env, params, jax.random.PRNGKey(3))
     keys = jax.random.split(jax.random.PRNGKey(7), N)
@@ -60,6 +63,15 @@ def main():
     phi = jax.jit(lambda o: est._features(setup, *obs_to_state(300, 4, o)[1:], obs_to_state(300, 4, o)[0].t)[0])
     Hmax = max(HS)
     exp_r = np.zeros(len(HS)); exp_phi = np.zeros((len(HS), len(st.prev_phi)))
+    D1 = len(st.prev_phi)
+    Dt = est._td_dim(D1)
+    exp_C = np.zeros((Dt, Dt)); exp_b = np.zeros(Dt); exp_n = 0
+    from xp_gym.estimators.pool_features import pool_features
+    def _px(o):
+        ev, W, T = obs_to_state(300, 4, o)
+        return pool_features(W.astype(jnp.int32), T.astype(jnp.int32), ev.t, setup[1], setup[2])[est._extra_idx()]
+    phix = jax.jit(_px)
+    tdfeat = jax.jit(lambda d, o: est._td_feat(d, obs_to_state(300, 4, o)[0].t))
     nf = 0
     for t0 in range(1, N):
         if cA[t0] == cB[t0] or t0 + 1 > N - 1:
@@ -78,6 +90,20 @@ def main():
             dphi = np.asarray(phi(of[H - 1])) - np.asarray(phi(obs_post[t0 + H - 1]))
             dphi[-1] = 0
             exp_phi[i] += s * dphi
+        # fork-TD transitions psi_a -> psi_{a+1}, a = 1..Hmax-1, added at step t0+a+1
+        psi = []
+        for a in range(1, L + 1):
+            if t0 + a > N - 1:
+                break
+            d = np.asarray(phi(of[a - 1]), np.float64) - np.asarray(phi(obs_post[t0 + a - 1]), np.float64)
+            d[-1] = 0
+            d = np.concatenate([d, np.asarray(phix(of[a - 1]), np.float64) - np.asarray(phix(obs_post[t0 + a - 1]), np.float64)])
+            psi.append(np.asarray(tdfeat(jnp.asarray(d, jnp.float32), obs_post[t0 + a - 1]), np.float64))
+        for a in range(1, len(psi)):
+            if a + 1 > Hmax:
+                break
+            dr = r[t0 + a] - rf[a]
+            exp_C += np.outer(psi[a - 1], psi[a - 1] - psi[a]); exp_b += -psi[a - 1] * dr; exp_n += 1
         nf += 1
     print("forks", nf, "early", float(st.n_early), "drop", float(st.n_drop))
     print("acc_r  ", np.asarray(st.acc_r))
@@ -87,6 +113,12 @@ def main():
     err = np.abs(np.asarray(st.acc_phi) - exp_phi).max()
     print("acc_phi max err", err)
     assert err < 1e-3
+    td = {k: np.asarray(st.td[k]) + np.asarray(st.tdc[k]) for k in st.td}
+    print("td n", float(td["n"]), exp_n)
+    assert float(td["n"]) == exp_n
+    print("td C max err", np.abs(td["C"] - exp_C).max(), "b max err", np.abs(td["b"] - exp_b).max())
+    assert np.abs(td["C"] - exp_C).max() < 1e-2 * max(1, np.abs(exp_C).max() * 1e-3)
+    assert np.abs(td["b"] - exp_b).max() < 1e-2 * max(1, np.abs(exp_b).max() * 1e-3)
     # H=1 checkpoint equals the paired accumulators
     assert np.allclose(float(st.acc_r[0]), float(st.P_r), rtol=1e-4, atol=1e-2)
     out = np.asarray(est.estimate(env, params, design, st))

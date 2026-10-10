@@ -37,3 +37,4 @@ estimators:
     fork_horizons: [1, 10, 30, 100, 300, 1000]
     fork_slots: 192
     fork_ghosts: 16
+    fork_td: false
