@@ -1,0 +1,33 @@
+name: dq-paper-ope-tsri-1
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+# Paper protocol (other than DQ) at A=0.2, seed 42, 50 envs (same trajectories as the DQ runs):
+#  - burn-in T0 = 5N = 1500 (N = 300 cars) for OPE and TSRI
+#  - OPE-LSTD: no hyperparameters (ridge 1e-8 only); online Diff-GQ1 over the alpha grid
+#  - OPE Differential TD: steps gamma/sqrt(t), beta*gamma/sqrt(t); gamma in {1e-3,1e-2,1e-1,1}, beta in {0.2,0.5}
+#  - TSRI: market-balance design with lambda/mu = $MB measured from the env; beta = e^-MB; k in {1,2}
+run: |
+  for stb in $STBS; do
+    uv run python scripts/run.py --config-name=ope_tsr_expts \
+      "env.savings_threshold_A=0.2" "env.savings_threshold_B=$stb" \
+      estimators.ope.burn_in=1500 'estimators.ope.ridges=[1e-8]' 'estimators.ope.gq_etas=[1e-8]' \
+      'estimators.ope.alphas=[0.001,0.01,0.1,1.0]' '+estimators.ope.td_betas=[0.2,0.5]' +estimators.ope.td_sqrt=true \
+      "run.output_path=s3://research/dq/paper/$VASTLAUNCH_JOB_ID/ope_pair0.2:${stb}.csv"
+    uv run python scripts/run.py --config-name=tsri_expts \
+      "env.savings_threshold_A=0.2" "env.savings_threshold_B=$stb" design.market_balance=$MB \
+      "estimators.tsri.betas=[$BETA]" +estimators.tsri.burn_in=1500 \
+      "run.output_path=s3://research/dq/paper/$VASTLAUNCH_JOB_ID/tsri_pair0.2:${stb}_mb.csv"
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STBS: "0.26 0.175"
+  MB: "1.618"
+  BETA: "0.1983"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

@@ -53,11 +53,13 @@ def run(p, est, nch=NCH, seed=0, ch=CH):
     return env, params, est, st, log, online
 
 
-@pytest.fixture(scope="module")
-def mixed():
+@pytest.fixture(scope="module", params=["const", "sqrt_betas"])
+def mixed(request):
+    # "sqrt_betas": the paper's Differential TD grid, steps gamma/sqrt(n) and beta gamma/sqrt(n)
+    extra = dict(td_betas=(0.2, 0.5), td_sqrt=True) if request.param == "sqrt_betas" else {}
     est = PoolOPEEstimator(p=0.5, chunk=CH, thresholds=(0.0, 0.1), cv_blocks=2,
                            ridges=(1e-6, 1e-3, 1.0), gq_etas=(1e-9, 1e-6, 1e-3),
-                           alphas=(0.01, 0.1), gq_eta=1e-3, gq_beta_ratio=2.0)
+                           alphas=(0.01, 0.1), gq_eta=1e-3, gq_beta_ratio=2.0, **extra)
     return run(0.5, est)
 
 
@@ -123,7 +125,9 @@ def test_accumulators_match_numpy(mixed):
     D = Phi.shape[1] - 1
     al = np.asarray(est.alphas)
     G = len(al)
-    th, R = np.zeros((4, G, D)), np.zeros((4, G))
+    tg_grid = est.td_grid
+    Gt = len(tg_grid)
+    th, R = np.zeros((4, Gt, D)), np.zeros((4, Gt))
     u, nu = np.zeros((4, G, D + 1)), np.zeros((4, G, D + 1))
     th_sum, u_sum, cnt = np.zeros_like(th), np.zeros((4, G, D)), 0
     for t in range(CH, n):                        # updates start after the first chunk
@@ -132,11 +136,13 @@ def test_accumulators_match_numpy(mixed):
         for k, (c, Pn, rn) in enumerate(tg):
             xn = (Pn[t, :-1] - mu) / sd
             rt = (rn[t] - rmu) / rsd
-            for g in range(G):
+            sched = 1.0 / np.sqrt(cnt + 1.0) if est.td_sqrt else 1.0
+            for g, (a, b) in enumerate(tg_grid):
                 dl = rt - R[k, g] + th[k, g] @ (xn - x)
-                step = al[g] / D * c[t] * dl
+                step = a * sched / D * c[t] * dl
                 th[k, g] = th[k, g] + step * x
-                R[k, g] += est.td_eta * step
+                R[k, g] += b * step
+            for g in range(G):
                 dl2 = rt - u[k, g, 0] + u[k, g, 1:] @ (xn - x)
                 ynu = nu[k, g] @ y
                 a1 = al[g] / (D + 1)

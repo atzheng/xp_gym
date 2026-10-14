@@ -3,6 +3,7 @@ from functools import lru_cache
 import math
 
 import numpy as np
+import pytest
 import jax
 import jax.numpy as jnp
 
@@ -102,10 +103,11 @@ def test_design_and_paper_params():
     assert abs(np.asarray(ds.z_L).mean() - 0.6) < 0.1
 
 
-def test_tsri_accumulators_and_formulas():
+@pytest.mark.parametrize("burn_in", [0, 100])
+def test_tsri_accumulators_and_formulas(burn_in):
     (_, _), (env, params) = envs()
     design = TwoSidedRandomizedDesign(a_C=0.5, a_L=0.4)
-    est = TSRIEstimator(betas=(0.0, 0.37, 1.0), ks=(1, 2))
+    est = TSRIEstimator(betas=(0.0, 0.37, 1.0), ks=(1, 2), burn_in=burn_in)
     carry = init_carry({"e": est}, design, env, params, jax.random.PRNGKey(5))
 
     @jax.jit
@@ -121,7 +123,7 @@ def test_tsri_accumulators_and_formulas():
     carry, (r, car, zC) = jax.tree.map(np.asarray, go(carry, jax.random.PRNGKey(6)))
     zL = np.asarray(carry[3].z_L)
     Q = np.zeros((2, 2))
-    for t in range(N):
+    for t in range(burn_in, N):
         if car[t] >= 0:
             Q[int(zC[t]), int(zL[car[t]])] += r[t]
     st = carry[2]["e"]
@@ -129,7 +131,7 @@ def test_tsri_accumulators_and_formulas():
     out = np.asarray(est.estimate(env, params, design, st))
     lab = dict(zip(est.labels, out))
     aC, aL = 0.5, 0.4
-    q = Q / N
+    q = Q / (N - burn_in)
     q11, q01 = q[1, 1] / (aC * aL), q[0, 1] / ((1 - aC) * aL)
     q10, q00 = q[1, 0] / (aC * (1 - aL)), q[0, 0] / ((1 - aC) * (1 - aL))
     assert np.isclose(lab["tsrn"], q11 - (q[0, 1] + q[1, 0] + q[0, 0]) / (1 - aC * aL), rtol=1e-4)

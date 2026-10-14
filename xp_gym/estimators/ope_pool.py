@@ -56,6 +56,10 @@ Outputs (ATE columns, see `labels`; f in {cf, is}):
                     Column = Bellman plug-in rho = sum c[r^pi + U(y') - U(y)] / sum c
                     (the last row of (*)) at the Polyak-averaged theta.
   tdit_{f}_a{alpha} the Rbar iterate (Wan et al.'s own estimate of rho).
+                    With `td_betas`, the TD grid is alphas x td_betas (Rbar step ratio
+                    beta in place of td_eta) and labels gain a _b{beta} suffix.  With
+                    `td_sqrt`, both TD steps decay as 1/sqrt(n), n = online steps so far
+                    (the paper's gamma/sqrt(t) and beta gamma/sqrt(t), gamma = alpha/D).
   td_{f}_sel        alpha picked per policy by the full-data MSPBE of the
                     averaged iterate (in-sample heuristic).
   gq_{f}_a{alpha}, gqit_{f}_a{alpha}, gq_{f}_sel: online Diff-GQ1 (eq. (11))
@@ -157,6 +161,8 @@ class PoolOPEEstimator(Estimator):
     alphas: Tuple[float, ...] = struct.field(
         pytree_node=False, default=(1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1.0))
     td_eta: float = struct.field(pytree_node=False, default=1.0)      # Rbar step ratio
+    td_betas: Tuple[float, ...] = struct.field(pytree_node=False, default=())  # grid over Rbar ratio
+    td_sqrt: bool = struct.field(pytree_node=False, default=False)    # steps ~ 1/sqrt(n)
     gq_eta: float = struct.field(pytree_node=False, default=0.0)      # online Diff-GQ1 ridge
     gq_beta_ratio: float = struct.field(pytree_node=False, default=1.0)
     online_sd_floor: float = struct.field(pytree_node=False, default=1.0)
@@ -164,8 +170,20 @@ class PoolOPEEstimator(Estimator):
     burn_in: int = struct.field(pytree_node=False, default=0)  # drop transitions t < burn_in
 
     def __post_init__(self):
-        for k in ("ridges", "gq_etas", "alphas", "thresholds"):
+        for k in ("ridges", "gq_etas", "alphas", "thresholds", "td_betas"):
             object.__setattr__(self, k, tuple(float(x) for x in getattr(self, k)))
+
+    @property
+    def td_grid(self):
+        """[(alpha, beta)] for the TD runs; beta is the Rbar step ratio."""
+        if self.td_betas:
+            return [(a, b) for a in self.alphas for b in self.td_betas]
+        return [(a, self.td_eta) for a in self.alphas]
+
+    def _td_names(self):
+        if self.td_betas:
+            return [f"a{_fmt(a)}_b{_fmt(b)}" for a, b in self.td_grid]
+        return [f"a{_fmt(a)}" for a in self.alphas]
 
     @property
     def labels(self):
@@ -176,9 +194,10 @@ class PoolOPEEstimator(Estimator):
         for f in FORMS:
             out += [f"gqfp_{f}_e{_fmt(e)}" for e in self.gq_etas] + [f"gqfp_{f}_cv"]
         for m in ("td", "gq"):
+            names = self._td_names() if m == "td" else [f"a{_fmt(a)}" for a in self.alphas]
             for f in FORMS:
-                out += [f"{m}_{f}_a{_fmt(a)}" for a in self.alphas]
-                out += [f"{m}it_{f}_a{_fmt(a)}" for a in self.alphas]
+                out += [f"{m}_{f}_{nm}" for nm in names]
+                out += [f"{m}it_{f}_{nm}" for nm in names]
                 out += [f"{m}_{f}_sel"]
         return out
 
@@ -192,6 +211,7 @@ class PoolOPEEstimator(Estimator):
         D1 = self._fe().n_features(env_params)
         D = D1 - 1
         G = len(self.alphas)
+        Gt = len(self.td_grid)
         K = max(self.cv_blocks, 1)
         ip = env_params.env_params
         obs_dim = 3 + 2 * ip.n_cars * 2 * ip.max_active_trips
@@ -204,7 +224,7 @@ class PoolOPEEstimator(Estimator):
             buf_r=z(self.chunk), buf_rc=z(self.chunk), buf_z=z(self.chunk), buf_d=z(self.chunk),
             blk=blk, started=jnp.array(False), mu=z(D), sd=jnp.ones(D, jnp.float32),
             rmu=z(), rsd=jnp.ones((), jnp.float32),
-            td_th=z(NCOMBO, G, D), td_R=z(NCOMBO, G), td_sum=z(NCOMBO, G, D),
+            td_th=z(NCOMBO, Gt, D), td_R=z(NCOMBO, Gt), td_sum=z(NCOMBO, Gt, D),
             gq_u=z(NCOMBO, G, D + 1), gq_nu=z(NCOMBO, G, D + 1), gq_sum=z(NCOMBO, G, D),
             n_avg=z())
 
@@ -247,12 +267,15 @@ class PoolOPEEstimator(Estimator):
         D = x.shape[0]
         al = jnp.asarray(self.alphas, jnp.float32)[None, :]              # (1, G)
         dx = xn - x[None, :]                                             # (4, D)
-        # differential TD
+        # differential TD over the (alpha, beta) grid
+        ta = jnp.asarray([a for a, _ in self.td_grid], jnp.float32)[None, :]  # (1, Gt)
+        tb = jnp.asarray([b for _, b in self.td_grid], jnp.float32)[None, :]
+        sched = jax.lax.rsqrt(state.n_avg + 1.0) if self.td_sqrt else 1.0
         th = state.td_th
         dlt = rt[:, None] - state.td_R + jnp.einsum("kgd,kd->kg", th, dx, precision=HI)
-        g = go * c[:, None] * dlt * al / D                               # (4, G)
+        g = go * c[:, None] * dlt * ta * sched / D                       # (4, Gt)
         th = th + g[..., None] * x[None, None, :]
-        R = state.td_R + self.td_eta * g
+        R = state.td_R + tb * g
         # Diff-GQ1
         u, nu = state.gq_u, state.gq_nu
         y = jnp.concatenate([jnp.ones(1), x])
@@ -319,7 +342,7 @@ class PoolOPEEstimator(Estimator):
 
     @property
     def np_cfg(self):
-        return dict(ridges=self.ridges, etas=self.gq_etas, G=len(self.alphas))
+        return dict(ridges=self.ridges, etas=self.gq_etas, G=len(self.alphas), Gt=len(self.td_grid))
 
     def estimate(self, env, env_params, design, state):
         cfg = self.np_cfg
@@ -407,10 +430,10 @@ def np_rhos(cfg, A, b, C, s1, s2, n, td_sum, td_R, gq_sum, gq_r, n_avg, osd, rmu
         R[("lstd", k)] = path_and_cv(k, lstd_prep, cfg["ridges"])
         R[("gqfp", k)] = path_and_cv(k, gq_prep, cfg["etas"])
     # online methods: plug-in rho at the averaged weights, iterate, MSPBE score
-    G = cfg["G"]
     na = max(float(n_avg), 1.0)
     osd = f64(osd)
     for m, sums, its in (("td", f64(td_sum), f64(td_R)), ("gq", f64(gq_sum), f64(gq_r))):
+        G = cfg["Gt"] if m == "td" else cfg["G"]
         for k in range(NCOMBO):
             As, bs = stdz(Af[k], bf[k], nf)
             den = Af[k][-1, -1]

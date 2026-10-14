@@ -13,6 +13,7 @@ outcome = reward (profit) of a request, the "rate of booking" (17) becomes
 The paper sets beta = exp(-lambda/tau) (market balance); here beta is a grid so
 it can be chosen afterwards (include exp(-m) for your market-balance guess m).
 a_C, a_L are read from the design (effective values if it uses eq. (26)).
+`burn_in` drops steps t < burn_in (the fleet starts empty); T counts steps after it.
 """
 from typing import Tuple
 
@@ -50,6 +51,7 @@ class TSRIEstimator(Estimator):
     betas: Tuple[float, ...] = struct.field(
         pytree_node=False, default=(0.0, 0.25, 0.3679, 0.5, 0.75, 1.0))
     ks: Tuple[float, ...] = struct.field(pytree_node=False, default=(1.0, 2.0))
+    burn_in: int = struct.field(pytree_node=False, default=0)
 
     def __post_init__(self):
         for k in ("betas", "ks"):
@@ -67,8 +69,9 @@ class TSRIEstimator(Estimator):
         zC = obs.design_info.z_C.astype(jnp.int32)
         zL = obs.design_info.z_L[jnp.maximum(car, 0)].astype(jnp.int32)
         r = jnp.where(car >= 0, obs.reward, 0.0).astype(jnp.float32)
+        r = jnp.where(state.t >= self.burn_in, r, 0.0)
         return TSRIState(Q=state.Q.at[zC, zL].add(r), t=state.t + 1)
 
     def estimate(self, env, env_params, design, state):
-        T = jnp.maximum(state.t, 1).astype(jnp.float32)
+        T = jnp.maximum(state.t - self.burn_in, 1).astype(jnp.float32)
         return tsr_estimates(state.Q, T, design.eff_a_C, design.eff_a_L, self.betas, self.ks)
