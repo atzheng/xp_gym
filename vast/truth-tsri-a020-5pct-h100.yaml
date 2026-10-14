@@ -1,0 +1,21 @@
+name: dq-truth-tsri-a020-5pct
+resources:
+  accelerators: H100_SXM:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+run: |
+  # lambda(p) truth for 0.2:0.025 (p=0 all-A run already exists in ate4/), then TSR at B=0.025 and 0.49
+  uv run python scripts/lambda_p.py "s3://research/dq/ate4/ate_pair0.2:0.025_E128.csv" 128 500000 0.2:0.025 2 0.3 0.7 1.0
+  for stb in 0.025 0.49; do
+    uv run python scripts/run.py --config-name=tsri_expts \
+      "env.savings_threshold_A=0.2" "env.savings_threshold_B=$stb" design.market_balance=1.0 \
+      "run.output_path=s3://research/dq/tsri/$VASTLAUNCH_JOB_ID/tsri_pair0.2:${stb}_mb1.csv"
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null
