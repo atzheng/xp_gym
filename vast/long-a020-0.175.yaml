@@ -1,0 +1,20 @@
+name: dq-long-a020-0.175
+resources:
+  accelerators: A100_SXM4:1
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+# Asymptotics: LSTD-DQ (trace lambda 0.5) + OPE-LSTD (ridge 1e-8, burn-in 1500) + naive for 1e7 steps,
+# A=0.2, seed 42, 25 envs x 2 trials (config long_expts)
+run: |
+  uv run python scripts/run.py --config-name=long_expts \
+    "env.savings_threshold_A=0.2" "env.savings_threshold_B=$STB" \
+    "run.output_path=s3://research/dq/long/$VASTLAUNCH_JOB_ID/long_pair0.2:${STB}.csv"
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STB: "0.175"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null
