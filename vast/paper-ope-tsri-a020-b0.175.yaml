@@ -1,6 +1,7 @@
 name: dq-paper-ope-tsri-0.175
 resources:
   accelerators: A100_SXM4:1
+  cpus: "8 machine_id!=117301"  # cpu_cores>=8, and not the shared host 117301 (CPU-starved)
 workdir: .
 setup: |
   pip install uv
