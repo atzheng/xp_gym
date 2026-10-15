@@ -1,0 +1,28 @@
+name: dq-tune-ope-0.1
+resources:
+  accelerators: A100_SXM4:1
+  cpus: "8 machine_id!=117301"  # cpu_cores>=8, and not the shared host 117301 (CPU-starved)
+workdir: .
+setup: |
+  pip install uv
+  uv venv
+  uv sync --group cuda
+# Wider tuning grid for the online OPE estimators at A=0.2, seed 42 (same trajectories as the
+# paper-protocol runs in s3://research/dq/paper/, so the grids can be pooled for tuning):
+#  - Differential TD with CONSTANT steps alpha/D, Rbar ratio beta (the paper run used gamma/sqrt(t))
+#  - online Diff-GQ1 over alpha x helper (nu) step ratio
+run: |
+  for stb in $STBS; do
+    uv run python scripts/run.py --config-name=ope_tsr_expts \
+      "env.savings_threshold_A=0.2" "env.savings_threshold_B=$stb" \
+      estimators.ope.burn_in=1500 'estimators.ope.ridges=[1e-8]' 'estimators.ope.gq_etas=[1e-8]' \
+      'estimators.ope.alphas=[0.003,0.01,0.03,0.1,0.2,0.3,0.5]' '+estimators.ope.td_betas=[0.03,0.1,0.3]' \
+      '+estimators.ope.gq_betas=[0.1,1.0,10.0]' +estimators.ope.td_sqrt=false \
+      "run.output_path=s3://research/dq/tune/$VASTLAUNCH_JOB_ID/ope_pair0.2:${stb}.csv"
+  done
+envs:
+  AWS_ENDPOINT_URL: https://bc0a4d3391012c4fb52a9e8e78724da1.r2.cloudflarestorage.com
+  STBS: "0.1"
+secrets:
+  AWS_SECRET_ACCESS_KEY: null
+  AWS_ACCESS_KEY_ID: null

@@ -67,6 +67,8 @@ Outputs (ATE columns, see `labels`; f in {cf, is}):
                       delta = r~ - rbar + w.(x~' - x~)
                       nu += (gq_beta_ratio alpha/D1) (c delta - y.nu) y
                       u  += (alpha/D1) [c (1, x~ - x~') (y.nu) - gq_eta (0, w)]
+                    With `gq_betas`, the grid is alphas x gq_betas (helper step
+                    ratio in place of gq_beta_ratio) and labels gain a _n{ratio} suffix.
 Online methods start after the first chunk with feature / reward means and
 standard deviations frozen from that chunk (x~ = (phi - mu)/sd, r~ = (r - mr)/sr).
 `burn_in` drops transitions t < burn_in everywhere (the fleet starts empty;
@@ -165,12 +167,13 @@ class PoolOPEEstimator(Estimator):
     td_sqrt: bool = struct.field(pytree_node=False, default=False)    # steps ~ 1/sqrt(n)
     gq_eta: float = struct.field(pytree_node=False, default=0.0)      # online Diff-GQ1 ridge
     gq_beta_ratio: float = struct.field(pytree_node=False, default=1.0)
+    gq_betas: Tuple[float, ...] = struct.field(pytree_node=False, default=())  # grid over nu ratio
     online_sd_floor: float = struct.field(pytree_node=False, default=1.0)
     cv_blocks: int = struct.field(pytree_node=False, default=5)
     burn_in: int = struct.field(pytree_node=False, default=0)  # drop transitions t < burn_in
 
     def __post_init__(self):
-        for k in ("ridges", "gq_etas", "alphas", "thresholds", "td_betas"):
+        for k in ("ridges", "gq_etas", "alphas", "thresholds", "td_betas", "gq_betas"):
             object.__setattr__(self, k, tuple(float(x) for x in getattr(self, k)))
 
     @property
@@ -179,6 +182,18 @@ class PoolOPEEstimator(Estimator):
         if self.td_betas:
             return [(a, b) for a in self.alphas for b in self.td_betas]
         return [(a, self.td_eta) for a in self.alphas]
+
+    @property
+    def gq_grid(self):
+        """[(alpha, ratio)] for the Diff-GQ1 runs; ratio is the helper (nu) step ratio."""
+        if self.gq_betas:
+            return [(a, r) for a in self.alphas for r in self.gq_betas]
+        return [(a, self.gq_beta_ratio) for a in self.alphas]
+
+    def _gq_names(self):
+        if self.gq_betas:
+            return [f"a{_fmt(a)}_n{_fmt(r)}" for a, r in self.gq_grid]
+        return [f"a{_fmt(a)}" for a in self.alphas]
 
     def _td_names(self):
         if self.td_betas:
@@ -194,7 +209,7 @@ class PoolOPEEstimator(Estimator):
         for f in FORMS:
             out += [f"gqfp_{f}_e{_fmt(e)}" for e in self.gq_etas] + [f"gqfp_{f}_cv"]
         for m in ("td", "gq"):
-            names = self._td_names() if m == "td" else [f"a{_fmt(a)}" for a in self.alphas]
+            names = self._td_names() if m == "td" else self._gq_names()
             for f in FORMS:
                 out += [f"{m}_{f}_{nm}" for nm in names]
                 out += [f"{m}it_{f}_{nm}" for nm in names]
@@ -210,7 +225,7 @@ class PoolOPEEstimator(Estimator):
     def reset(self, rng, env, env_params, design):
         D1 = self._fe().n_features(env_params)
         D = D1 - 1
-        G = len(self.alphas)
+        G = len(self.gq_grid)
         Gt = len(self.td_grid)
         K = max(self.cv_blocks, 1)
         ip = env_params.env_params
@@ -265,7 +280,8 @@ class PoolOPEEstimator(Estimator):
         xn = (ph[:, :-1] - state.mu) / state.sd                          # (4, D)
         rt = (rr - state.rmu) / state.rsd                                # (4,)
         D = x.shape[0]
-        al = jnp.asarray(self.alphas, jnp.float32)[None, :]              # (1, G)
+        al = jnp.asarray([a for a, _ in self.gq_grid], jnp.float32)[None, :]  # (1, G)
+        nr = jnp.asarray([r for _, r in self.gq_grid], jnp.float32)[None, :]
         dx = xn - x[None, :]                                             # (4, D)
         # differential TD over the (alpha, beta) grid
         ta = jnp.asarray([a for a, _ in self.td_grid], jnp.float32)[None, :]  # (1, Gt)
@@ -282,7 +298,7 @@ class PoolOPEEstimator(Estimator):
         dlt2 = rt[:, None] - u[..., 0] + jnp.einsum("kgd,kd->kg", u[..., 1:], dx, precision=HI)
         ynu = jnp.einsum("kgd,d->kg", nu, y, precision=HI)
         a1 = go * al / (D + 1)
-        nu = nu + (self.gq_beta_ratio * a1 * (c[:, None] * dlt2 - ynu))[..., None] * y
+        nu = nu + (nr * a1 * (c[:, None] * dlt2 - ynu))[..., None] * y
         grad = jnp.concatenate([jnp.ones((NCOMBO, 1)), -dx], 1)          # (1, x - x')
         reg = jnp.concatenate([jnp.zeros_like(u[..., :1]), u[..., 1:]], -1)
         u = u + a1[..., None] * ((c[:, None] * ynu)[..., None] * grad[:, None, :]
@@ -342,7 +358,7 @@ class PoolOPEEstimator(Estimator):
 
     @property
     def np_cfg(self):
-        return dict(ridges=self.ridges, etas=self.gq_etas, G=len(self.alphas), Gt=len(self.td_grid))
+        return dict(ridges=self.ridges, etas=self.gq_etas, G=len(self.gq_grid), Gt=len(self.td_grid))
 
     def estimate(self, env, env_params, design, state):
         cfg = self.np_cfg
