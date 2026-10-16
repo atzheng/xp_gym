@@ -112,6 +112,16 @@ def main():
     jk = 2 * taus(th) - np.mean(loo, 0)
     print("jk", jk, online[L:])
     assert np.allclose(jk, online[L:], rtol=2e-2, atol=0.5)
+
+    # ridge grid: each block of the output equals a single-ridge estimator's output
+    import dataclasses
+    rg = dataclasses.replace(est, ridges=(1e-3, 0.1))
+    grid = np.asarray(rg.estimate(env, params, design, st))
+    one = np.asarray(dataclasses.replace(est, ridge=0.1).estimate(env, params, design, st))
+    assert len(rg.labels) == 2 * len(est.labels) == len(grid)
+    assert rg.labels[len(est.labels)].endswith("_r0.1")
+    assert np.allclose(grid[:len(online)], online, rtol=1e-5, atol=1e-6)
+    assert np.allclose(grid[len(online):], one, rtol=1e-5, atol=1e-6)
     print("ok")
 
 

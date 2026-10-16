@@ -85,9 +85,13 @@ class PoolLSTDDQEstimator(Estimator):
     match_K_later: int = struct.field(pytree_node=False, default=64)  # refs at offsets > 0
     jackknife_blocks: int = struct.field(pytree_node=False, default=0)
     jackknife_block_chunks: int = struct.field(pytree_node=False, default=10)
+    # grid of ridge penalties; if non-empty, every variant is reported for each ridge
+    # (labels gain a _r{ridge} suffix) and `ridge` is ignored
+    ridges: Tuple[float, ...] = struct.field(pytree_node=False, default=())
 
     def __post_init__(self):
         # hydra passes ListConfigs; static fields must be hashable
+        object.__setattr__(self, "ridges", tuple(float(r) for r in self.ridges))
         for k in ("trace_lambdas", "thresholds", "match_offsets"):
             object.__setattr__(self, k, tuple(float(x) if k != "match_offsets" else int(x)
                                               for x in getattr(self, k)))
@@ -95,7 +99,10 @@ class PoolLSTDDQEstimator(Estimator):
     @property
     def labels(self):
         base = ["paired"] + [f"tr{l}" for l in self.trace_lambdas]
-        return base + ([f"{b}_jk" for b in base] if self.jackknife_blocks else [])
+        base = base + ([f"{b}_jk" for b in base] if self.jackknife_blocks else [])
+        if self.ridges:
+            return [f"{b}_r{r:g}" for r in self.ridges for b in base]
+        return base
 
     # -- features ---------------------------------------------------------
     def _setup(self, env_params):
@@ -222,7 +229,7 @@ class PoolLSTDDQEstimator(Estimator):
             blk = {key: blk[key].at[k].add(inc[key]) for key in blk}
         return state.replace(chunk_first=X1[-1], blk=blk, **new)
 
-    def theta(self, state, leave_out=None):
+    def theta(self, state, leave_out=None, ridge=None):
         """Ridge-regularised LSTD solution on standardised features. The
         system is badly conditioned at gamma=1, so it is solved in float64
         on the host."""
@@ -255,7 +262,8 @@ class PoolLSTDDQEstimator(Estimator):
             stats = tuple(x - b[k][leave_out] for x, k in
                           zip(stats, ["Cd", "C", "b1", "s1", "s2", "sr", "n"]))
         return jax.pure_callback(
-            solve_batched, shapes, *stats, jnp.float32(self.gamma), jnp.float32(self.ridge),
+            solve_batched, shapes, *stats, jnp.float32(self.gamma),
+            jnp.float32(self.ridge if ridge is None else ridge),
             vmap_method="expand_dims")
 
     def _taus(self, state, th, rbar):
@@ -265,12 +273,17 @@ class PoolLSTDDQEstimator(Estimator):
         return jnp.concatenate([paired[None], tr])
 
     def estimate(self, env, env_params, design, state):
-        th, rbar = self.theta(state)
+        if self.ridges:
+            return jnp.concatenate([self._estimate(state, r) for r in self.ridges])
+        return self._estimate(state, None)
+
+    def _estimate(self, state, ridge):
+        th, rbar = self.theta(state, ridge=ridge)
         tau = self._taus(state, th, rbar)
         if not self.jackknife_blocks:
             return tau
         # leave-one-block-out; rbar kept at the full-data value
-        loo = jnp.stack([self._taus(state, self.theta(state, k)[0], rbar)
+        loo = jnp.stack([self._taus(state, self.theta(state, k, ridge)[0], rbar)
                          for k in range(self.jackknife_blocks)])
         nonempty = state.blk["n"] > 0
         Ke = jnp.maximum(nonempty.sum(), 1).astype(jnp.float32)
