@@ -1,7 +1,7 @@
 name: dq-tsri-fix-0.26
 resources:
   accelerators: A100_SXM4:1
-  cpus: "8 machine_id!=117301"  # cpu_cores>=8, and not the shared host 117301 (CPU-starved)
+  cpus: "8 machine_id notin [117301,151502,80398,36492]"  # cpu_cores>=8; excludes hosts that starved or failed our jobs
 workdir: .
 setup: |
   pip install uv
