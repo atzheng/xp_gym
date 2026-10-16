@@ -100,7 +100,8 @@ def test_design_and_paper_params():
         assert np.array_equal(np.asarray(a), np.asarray(info.z_C & ds.z_L))
         zs.append(bool(info.z_C))
     assert abs(np.mean(zs) - 0.3) < 0.08
-    assert abs(np.asarray(ds.z_L).mean() - 0.6) < 0.1
+    # complete randomization: exactly round(a_L * n_cars) treated cars
+    assert np.asarray(ds.z_L).sum() == round(0.6 * len(np.asarray(ds.z_L)))
 
 
 @pytest.mark.parametrize("burn_in", [0, 100])
@@ -130,7 +131,9 @@ def test_tsri_accumulators_and_formulas(burn_in):
     assert np.allclose(Q, np.asarray(st.Q), rtol=1e-5)
     out = np.asarray(est.estimate(env, params, design, st))
     lab = dict(zip(est.labels, out))
-    aC, aL = 0.5, 0.4
+    # normalized by the realized shares, not the design probabilities
+    aC, aL = zC[burn_in:].mean(), zL.mean()
+    assert np.isclose(aL, round(0.4 * len(zL)) / len(zL))
     q = Q / (N - burn_in)
     q11, q01 = q[1, 1] / (aC * aL), q[0, 1] / ((1 - aC) * aL)
     q10, q00 = q[1, 0] / (aC * (1 - aL)), q[0, 0] / ((1 - aC) * (1 - aL))

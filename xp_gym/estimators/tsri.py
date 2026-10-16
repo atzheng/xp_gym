@@ -12,7 +12,10 @@ outcome = reward (profit) of a request, the "rate of booking" (17) becomes
     + (1-beta) [lr - k  beta    (Q00/((1-aC)(1-aL)) - Q10/(aC (1-aL)))]
 The paper sets beta = exp(-lambda/tau) (market balance); here beta is a grid so
 it can be chosen afterwards (include exp(-m) for your market-balance guess m).
-a_C, a_L are read from the design (effective values if it uses eq. (26)).
+a_C, a_L are the REALIZED treated shares: a_C = fraction of (post-burn-in) requests
+with z_C = 1, a_L = fraction of cars with z_L = 1 (exactly round(a_L n_cars)/n_cars
+under the design's complete randomization).  Normalizing by the nominal design
+probabilities instead adds an error of order R (a_L_hat - a_L) / a_L.
 `burn_in` drops steps t < burn_in (the fleet starts empty); T counts steps after it.
 """
 from typing import Tuple
@@ -27,6 +30,8 @@ from xp_gym.estimators.estimator import Estimator, EstimatorState
 class TSRIState(EstimatorState):
     Q: jnp.ndarray  # (2, 2) sum of rewards by (customer cond i, listing cond j)
     t: jnp.ndarray
+    nC: jnp.ndarray  # number of post-burn-in requests with z_C = 1
+    aL: jnp.ndarray  # realized share of treated cars
 
 
 def tsr_estimates(Q, T, aC, aL, betas, ks):
@@ -62,16 +67,22 @@ class TSRIEstimator(Estimator):
         return ["tsrn", "cr", "lr"] + [f"tsri{k:g}_b{b:g}" for k in self.ks for b in self.betas]
 
     def reset(self, rng, env, env_params, design):
-        return TSRIState(Q=jnp.zeros((2, 2), jnp.float32), t=jnp.array(0))
+        return TSRIState(Q=jnp.zeros((2, 2), jnp.float32), t=jnp.array(0),
+                         nC=jnp.array(0.0, jnp.float32), aL=jnp.array(0.5, jnp.float32))
 
     def update(self, env, env_params, design, state, obs):
         car = obs.info["car"].reshape(-1)[0]
         zC = obs.design_info.z_C.astype(jnp.int32)
         zL = obs.design_info.z_L[jnp.maximum(car, 0)].astype(jnp.int32)
         r = jnp.where(car >= 0, obs.reward, 0.0).astype(jnp.float32)
-        r = jnp.where(state.t >= self.burn_in, r, 0.0)
-        return TSRIState(Q=state.Q.at[zC, zL].add(r), t=state.t + 1)
+        live = state.t >= self.burn_in
+        r = jnp.where(live, r, 0.0)
+        aL = obs.design_info.z_L.astype(jnp.float32).mean()
+        return TSRIState(Q=state.Q.at[zC, zL].add(r), t=state.t + 1,
+                         nC=state.nC + (live & (zC == 1)).astype(jnp.float32), aL=aL)
 
     def estimate(self, env, env_params, design, state):
         T = jnp.maximum(state.t - self.burn_in, 1).astype(jnp.float32)
-        return tsr_estimates(state.Q, T, design.eff_a_C, design.eff_a_L, self.betas, self.ks)
+        aC = jnp.clip(state.nC / T, 1e-6, 1 - 1e-6)
+        aL = jnp.clip(state.aL, 1e-6, 1 - 1e-6)
+        return tsr_estimates(state.Q, T, aC, aL, self.betas, self.ks)

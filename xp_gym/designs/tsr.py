@@ -5,8 +5,11 @@
 Mapping onto the pooled dispatch env (xp_gym.environments.rideshare_pool_tsr):
   * customers <-> ride requests: each request is treated independently
     w.p. a_C (z_C ~ Bern(a_C), fresh at every step);
-  * listings  <-> cars: each car is treated w.p. a_L, drawn ONCE per run at
-    reset (z_L ~ Bern(a_L)^n_cars) and fixed thereafter, as in the paper;
+  * listings  <-> cars: exactly round(a_L * n_cars) cars, chosen uniformly at
+    random ONCE per run at reset, are treated and stay treated (complete
+    randomization).  Independent Bern(a_L) draws would leave the realized treated
+    share off a_L by ~sqrt(a_L(1-a_L)/n_cars) (+-2.8 pp at 300 cars), which the
+    estimators' 1/a_L normalization turns into large errors;
   * the intervention applies only to treated-customer x treated-listing
     interactions (paper eqs. (13)-(14)): for request t, car j is screened with
     arm B's pooling savings threshold iff z_C(t) = 1 and z_L(j) = 1, and with
@@ -77,7 +80,8 @@ class TwoSidedRandomizedDesign(Design):
     def reset(self, rng, env_params) -> TSRDesignState:
         n_cars = env_params.env_params.n_cars
         k_L, k_C = jax.random.split(rng)
-        z_L = jax.random.bernoulli(k_L, self.eff_a_L, (n_cars,))
+        n_treat = int(round(self.eff_a_L * n_cars))
+        z_L = jax.random.permutation(k_L, jnp.arange(n_cars) < n_treat)
         return TSRDesignState(rng=k_C, z_L=z_L)
 
     def assign_treatment(self, design_state: TSRDesignState, env_state):
